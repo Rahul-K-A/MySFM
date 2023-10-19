@@ -1,4 +1,5 @@
-#include "VisualOdometry.h"
+#include "common-includes.h"
+
 #define scaler 1;
 
 /*
@@ -7,11 +8,21 @@ TODO:
     2. https://research.latinxinai.org/papers/cvpr/2021/pdf/59_CameraReady_59.pdf refer for using absolute scale
 */
 
+float dist(Point2f a, Point2f b)
+{
+   float dist =  (a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y);
+   dist = sqrtf(dist);
+   return dist;
+}
+
+
+float dThreshold = 0.4;
 Mat cRot = Mat::eye(3, 3, CV_64F);
 Mat cT = ( Mat1d(3,1) << 0.f , 0.f , 0.f );
-   Mat K = (Mat1d(3,3) << 2759.48, 0, 1520.69, 
+Mat K = (Mat1d(3,3) << 2759.48, 0, 1520.69, 
                             0, 2764.16, 1006.81, 
                             0, 0, 1); 
+
 
 int main(int argc, const char **argv)
 {
@@ -23,8 +34,7 @@ int main(int argc, const char **argv)
 
     if(argc != 2)
     {
-        cout<<"Wrong Command given. Please use ./VisualOdometry <path to dataset> <Camera FOV type>\n";
-        cout<<"Camera FOV dtypes: WIDE = 1, NARROW = 2\n";
+        cout<<"Wrong Command given. Please use ./MySFM <path to dataset>\n";
         return 0;
     }
     
@@ -34,6 +44,7 @@ int main(int argc, const char **argv)
         dataset_source_dir.pop_back();
     }
 
+    set<fs::path> im_paths;
     string dataset_image_path = dataset_source_dir + string("/images");
     for (const auto & entry : fs::directory_iterator(dataset_image_path))
     {
@@ -77,7 +88,7 @@ int main(int argc, const char **argv)
 
     Mat mask;
  
-    Mat E = findEssentialMat(p2d1, p2d2, K , RANSAC, 0.997, 1.0, mask);
+    Mat E = findEssentialMat(p2d1, p2d2, K , RANSAC, 0.999, 1.0, mask);
 
     vector<cv::Point2f> inlier_match_points1, inlier_match_points2;
     for(int i = 0; i < mask.rows; i++) {
@@ -104,27 +115,22 @@ int main(int argc, const char **argv)
         }
     }
 
-
+    R = R.inv();
+    t = t * -1.0;
     cout << R.type() << endl << t.type() <<endl;
     Mat rw1, rw2;
     hconcat(cRot, cT, rw1);
-    hconcat(R.inv() ,t * -1.0 , rw2);
+    hconcat(R ,t, rw2);
     Mat matched_img;
-    drawMatches(img1, kp1, img2, kp2, good_matches, matched_img,  Scalar::all(-1),
- Scalar::all(-1), std::vector<char>(), DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
+    drawMatches(img1c, kp1, img2c, kp2, good_matches, matched_img,  Scalar::all(-1), Scalar::all(-1), std::vector<char>(), DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
 
     Mat homogenised_3d_points;
-    Mat Kf;
-    K.convertTo(Kf, CV_32F);
+
     vector<Point3f> points_3f;
     Mat P = K * rw1;
     Mat P1 = K * rw2;
-    cout << P.type() << endl;
-    cout << P1.type() << endl;
     P.convertTo(P, CV_32F);
     P1.convertTo(P1, CV_32F);
-        cout << P.type() << endl;
-    cout << P1.type() << endl;
 
     cout << R<< endl;
     cout << t << endl;
@@ -137,21 +143,42 @@ int main(int argc, const char **argv)
         Mat currPoint3d =  homogenised_3d_points.col(i);
         currPoint3d /= currPoint3d.at<float>(3, 0);
         Point3f p(
-            (float)currPoint3d.at<float>(0, 0),
-            (float)currPoint3d.at<float>(1, 0),
-            (float)currPoint3d.at<float>(2, 0)
+            currPoint3d.at<float>(0, 0),
+            currPoint3d.at<float>(1, 0),
+            currPoint3d.at<float>(2, 0)
         );
         points_3f.push_back(p);
     }
+
+    vector<Point2f> reprojected_points, final_2d_points;
+    vector<Point3f> final_3d_points;
+    vector<float> reprojection_error;
+    vector<double> dummy;
+    projectPoints(points_3f, R, t, K, dummy, reprojected_points);
+
+    cout<< reprojected_points[0] <<"   " << triangulation_points2[0] <<  "\n\n\n\n\n\n";
+    float d;
+    for(uint16_t i = 0; i  < triangulation_points2.size(); i++)
+    {
+        d = dist(triangulation_points2[i], reprojected_points[i]);
+        cout<< d << endl;
+        if ( d < 100.f)
+        {
+            final_3d_points.push_back(points_3f[i]);
+            final_2d_points.push_back(triangulation_points1[i]);
+        }
+    }
+
+
     //Convert Point3D into PointXYZRGB
     pcl::PointCloud<pcl::PointXYZRGB>::Ptr point_cloud_ptr(new pcl::PointCloud<pcl::PointXYZRGB>);
     pcl::PointCloud<pcl::PointXYZRGB>::Ptr point_cloud_ptr_filtered(new pcl::PointCloud<pcl::PointXYZRGB>);
-    for(uint16_t i = 0; i < points_3f.size(); i++)
+    for(uint16_t i = 0; i < final_3d_points.size(); i++)
     {
         pcl::PointXYZRGB basic_point;
-        basic_point.x =(float) points_3f[i].x;
-        basic_point.y =(float) points_3f[i].y;
-        basic_point.z = (float)points_3f[i].z;
+        basic_point.x = -1.f * final_3d_points[i].x;
+        basic_point.y = -1.f * final_3d_points[i].y;
+        basic_point.z = final_3d_points[i].z;
         // if(points_3f[i].z > 1e20)
         // {
         //     basic_point.z = 14.f;
@@ -159,7 +186,7 @@ int main(int argc, const char **argv)
         // else{
         //     basic_point.z = points_3f[i].z * 1e5;
         // }
-        Vec3b color = img1c.at<Vec3b>(triangulation_points1[i]);
+        Vec3b color = img1c.at<Vec3b>(final_2d_points[i]);
         basic_point.b = color[0];
         basic_point.g = color[1];
         basic_point.r = color[2];
@@ -174,7 +201,7 @@ int main(int argc, const char **argv)
     point_cloud_ptr->is_dense = false;
 
     pcl::io::savePCDFileASCII("final.pcd", *point_cloud_ptr);
-    resize(matched_img, matched_img, Size(matched_img.cols/2, matched_img.rows/2));
+    resize(matched_img, matched_img, Size(matched_img.cols/4, matched_img.rows/4));
     imshow("matched_img", matched_img);
     if (waitKey(0) == 27)
     {

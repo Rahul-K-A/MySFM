@@ -2,6 +2,7 @@
 #include <opencv4/opencv2/opencv.hpp>
 #include <opencv4/opencv2/xfeatures2d.hpp>
 #include <opencv4/opencv2/features2d.hpp>
+#include <opencv2/calib3d.hpp>
 #include  <iostream>
 #include <string>
 #include <eigen3/Eigen/Core>
@@ -10,6 +11,7 @@
 #include <vector>
 #include <filesystem>
 #include <set>
+#include <cmath>
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
 #include <pcl/pcl_base.h>
