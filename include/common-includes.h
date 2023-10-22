@@ -9,7 +9,7 @@
 #include <sstream>
 #include <fstream>
 #include <vector>
-#include <filesystem>
+#include <experimental/filesystem>
 #include <set>
 #include <cmath>
 #include <pcl/point_cloud.h>
@@ -18,8 +18,10 @@
 #include <pcl/registration/icp.h>
 #include <pcl/filters/filter.h>
 #include <pcl/io/pcd_io.h>
+#include <cstdlib>
+#include <map>
 
 using namespace std;
 using namespace cv;
 using namespace cv::xfeatures2d;
-namespace fs = std::filesystem;
+namespace fs = std::experimental::filesystem;

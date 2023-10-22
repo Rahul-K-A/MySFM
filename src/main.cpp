@@ -17,6 +17,8 @@ float dist(Point2f a, Point2f b)
 
 
 const float dThreshold = 1.f;
+const float ratio_thresh = 0.7f;
+
 Mat cRot = Mat::eye(3, 3, CV_64F);
 Mat cT = ( Mat1d(3,1) << 0.f , 0.f , 0.f );
 Mat K = (Mat1d(3,3) << 2759.48, 0, 1520.69, 
@@ -24,8 +26,9 @@ Mat K = (Mat1d(3,3) << 2759.48, 0, 1520.69,
                             0, 0, 1); 
 
 struct CloudPoint {
-cv::Point3d pt;
+cv::Point3f pt;
 vector<int>index_of_2d_origin;
+cv::Vec3b color;
 };
 
 
@@ -33,12 +36,212 @@ struct CamState{
     Mat Image;
     Mat Descriptor;
     vector<KeyPoint> keypoints;
+    Mat R;
+    Mat t;
+    Mat P;
 };
 
 vector<CloudPoint> pcloud; //our global 3D point cloud
 vector<CamState> cameraStates;
+map<int, vector<vector<DMatch>> > match_table;
+vector<int> done_views;
 
 
+void computeFirstPointCloud()
+{
+    vector<Point2f> p2d1, p2d2;
+    vector<int> indices1, indices2;
+    vector<KeyPoint> kp1, kp2;
+    kp1 = cameraStates[0].keypoints;
+    kp2 = cameraStates[1].keypoints;
+
+    vector<DMatch> good_matches = match_table[0][1];
+
+    for(uint16_t i = 0; i < good_matches.size(); i++)
+    {
+        indices1.push_back(good_matches[i].queryIdx);
+        indices2.push_back(good_matches[i].trainIdx);
+        p2d1.push_back( kp1[good_matches[i].queryIdx].pt );
+        p2d2.push_back( kp2[good_matches[i].trainIdx].pt );
+    }
+
+    Mat mask;
+    cameraStates[0].R = Mat::eye(3, 3, CV_64F);
+    cameraStates[1].R = ( Mat1d(3,1) << 0.f , 0.f , 0.f );
+ 
+    Mat E = findEssentialMat(p2d1, p2d2, K , RANSAC, 0.999, 1.0, mask);
+    vector<int> inlier_indices1, inlier_indices2;
+    vector<cv::Point2f> inlier_match_points1, inlier_match_points2;
+    for(int i = 0; i < mask.rows; i++) {
+        if(mask.at<unsigned char>(i)){
+            inlier_indices1.push_back(indices1[i]);
+            inlier_indices2.push_back(indices2[i]);
+            inlier_match_points1.push_back(p2d1[i]);
+            inlier_match_points2.push_back(p2d2[i]);
+        }
+    }
+    Mat R,t;
+    mask.release();
+    recoverPose(E, inlier_match_points1, inlier_match_points2, K, R, t, mask);
+
+    if( (abs(determinant(R)) - 1.f) > 1e-7 )
+    {
+        cout<<"Fucked up\n";
+    }
+    vector<int> triangulation_indices1, triangulation_indices2;
+    vector<cv::Point2f> triangulation_points1, triangulation_points2;
+    for(int i = 0; i < mask.rows; i++) {
+        if(mask.at<unsigned char>(i)){
+            triangulation_indices1.push_back(inlier_indices1[i]);
+            triangulation_indices2.push_back(inlier_indices2[i]);
+            triangulation_points1.push_back (inlier_match_points1[i]);
+            triangulation_points2.push_back(inlier_match_points2[i]);
+        
+        }
+    }
+
+    cameraStates[1].R = R.clone();
+    cameraStates[1].t = t.clone();
+    cout << R.type() << endl << t.type() <<endl;
+    Mat rw1, rw2;
+    hconcat(cRot, cT, rw1);
+    hconcat(R ,t, rw2);
+    Mat matched_img;
+
+    Mat homogenised_3d_points;
+
+    vector<Point3f> points_3f;
+    Mat P = K * rw1;
+    Mat P1 = K * rw2;
+    P.convertTo(P, CV_32F);
+    cameraStates[0].P = P.clone();
+    P1.convertTo(P1, CV_32F);
+    cameraStates[1].P = P1.clone();
+
+    triangulatePoints(P, P1, triangulation_points1, triangulation_points2, homogenised_3d_points );
+    cout <<"homogenised_3d_points.type() :" << homogenised_3d_points.type() << endl;
+
+    assert(homogenised_3d_points.type() == CV_32F);
+    for(uint16_t i = 0; i < homogenised_3d_points.cols; i++)
+    {
+        Mat currPoint3d =  homogenised_3d_points.col(i);
+        currPoint3d /= currPoint3d.at<float>(3, 0);
+        Point3f p(
+            currPoint3d.at<float>(0, 0),
+            currPoint3d.at<float>(1, 0),
+            currPoint3d.at<float>(2, 0)
+        );
+        points_3f.push_back(p);
+    }
+
+    vector<Point2f> reprojected_points;
+    vector<float> reprojection_error;
+    vector<double> dummy;
+    projectPoints(points_3f, R, t, K, dummy, reprojected_points);
+    float average_reprojection_error = 0;
+    cout<< reprojected_points[0] <<"   " << triangulation_points2[0] <<  "\n\n\n\n\n\n";
+    float d;
+    for(uint16_t i = 0; i  < triangulation_points2.size(); i++)
+    {
+        d = dist(triangulation_points2[i], reprojected_points[i]);
+        average_reprojection_error +=d;
+        if ( d < 1.f)
+        {
+            CloudPoint pc;
+            pc.index_of_2d_origin = vector<int>(cameraStates.size(), -1);
+            pc.pt = points_3f[i]; 
+            pc.index_of_2d_origin[0] = triangulation_indices1[i];
+            pc.index_of_2d_origin[1] = triangulation_indices2[i];
+            pc.color = cameraStates[0].Image.at<Vec3b>(kp1[triangulation_indices1[i]].pt);
+            pcloud.push_back(pc);
+        }
+    }
+    average_reprojection_error = average_reprojection_error/triangulation_points2.size();
+    cout << "Average reprojection error: " << average_reprojection_error << endl;
+    d = 0; 
+    average_reprojection_error = 0;
+
+    done_views.push_back(0);
+    done_views.push_back(1);
+
+}
+
+
+int find_best_correspondance(int view_to_eval)
+{
+    int max_correspondances = -1;
+    int best_match_index = -1;
+    vector<int> pcloud_status(pcloud.size(),0);
+    for(uint16_t i = 0; i < done_views.size(); i++ )
+    {
+        int done_view_idx = done_views[i];
+        int correspondances = 0;
+        vector<DMatch> good_matches = match_table[done_view_idx][view_to_eval];
+        cout<<"Size of good matches: "<< good_matches.size() << endl;
+        for (unsigned int match  = 0; match < good_matches.size(); match++) 
+        {
+            // the index of the matching 2D point in <old_view>
+            int idx_in_old_view = good_matches[match].queryIdx;
+            //scan the existing cloud to see if this point from <old_view>exists 
+            for (unsigned int pcldp = 0; pcldp < pcloud.size(); pcldp++) 
+            {
+                // see if this 2D point from <old_view> contributed to this 3D point in the cloud
+                if (idx_in_old_view == pcloud[pcldp].index_of_2d_origin[done_view_idx] && pcloud_status[pcldp] == 0) //prevent duplicates
+                {
+                    //2d point in image <working_view>
+                    pcloud_status[pcldp] = 1;
+                    pcloud[pcldp].index_of_2d_origin[view_to_eval] = good_matches[match].trainIdx;
+                    correspondances++;
+                    break;
+                }
+            }
+        }
+        if(correspondances > max_correspondances)
+        {
+            max_correspondances = correspondances;
+            best_match_index = done_view_idx;
+            cout << "Best match is image "<< i << " with " << max_correspondances << " matches\n";
+        }
+    }
+    return best_match_index;
+}
+
+void get_corresponding_keypoints(int view1, int view2, vector<KeyPoint>& keypoints1, vector<KeyPoint>& keypoints2)
+{
+    vector<DMatch> matches = match_table[view1][view2];
+    for(uint16_t i = 0; i < matches.size(); i++)
+    {
+        keypoints1.push_back(cameraStates[view2].keypoints[matches[i].queryIdx]);
+        keypoints2.push_back(cameraStates[view2].keypoints[matches[i].trainIdx]);
+    }
+}
+
+
+void find_2d_3d_matches(int view1, int view2, vector<Point2f>& imagePoints, vector<Point3f>& ppcloud)
+{
+    ppcloud.clear();
+    vector<int> pcloud_status(pcloud.size(),0);
+    vector<DMatch> good_matches = match_table[view1][view2];
+    for (unsigned int match  = 0; match < good_matches.size(); match++) 
+    {
+        // the index of the matching 2D point in <old_view>
+        int idx_in_old_view = good_matches[match].queryIdx;
+        //scan the existing cloud to see if this point from <old_view>exists 
+        for (unsigned int pcldp = 0; pcldp < pcloud.size(); pcldp++) 
+        {
+            // see if this 2D point from <old_view> contributed to this 3D point in the cloud
+            if (idx_in_old_view == pcloud[pcldp].index_of_2d_origin[view1] && pcloud_status[pcldp] == 0) //prevent duplicates
+            {
+                ppcloud.push_back(pcloud[pcldp].pt);
+                imagePoints.push_back( cameraStates[view2].keypoints[ good_matches[match].trainIdx ].pt) ;
+                //2d point in image <working_view>
+                pcloud_status[pcldp] = 1;
+                break;
+            }
+        }
+    }
+    
+}
 
 
 int main(int argc, const char **argv)
@@ -67,13 +270,14 @@ int main(int argc, const char **argv)
     {
         im_paths.insert(entry.path());
     }
-    auto begin = im_paths.begin();
-    auto next = std::next(begin,1);
+    
     Ptr<SURF> surf = SURF::create();
     Ptr<DescriptorMatcher> matcher = DescriptorMatcher::create(DescriptorMatcher::FLANNBASED);
+    cout << "Reading images...\n";
     for(auto image_path : im_paths)
     {
-        Mat img = imread(image_path.c_str());
+        cout << "Reading image: " << image_path.c_str() << endl;
+        Mat img = imread(image_path.c_str(), IMREAD_COLOR);
         vector<KeyPoint> keypoint;
         Mat descriptor;
         CamState currCamState;
@@ -86,120 +290,92 @@ int main(int argc, const char **argv)
         cameraStates.push_back(currCamState);
         
     }
-    for(uint16_t i = 0; i < cameraStates.size(); i++)
+    cout << "Finished reading images...\n";
+    assert(cameraStates.size() > 2);
+
+    //Populate match table with empty vectors
+    for(uint16_t i =0; i < cameraStates.size(); i++)
     {
-        cout << cameraStates[i].Descriptor << endl;
+        for(uint16_t j = 0; j < cameraStates.size(); j++)
+        {
+            match_table[i].push_back(vector<DMatch>());
+        }
     }
 
-    // vector<KeyPoint> kp1, kp2;
-    // Mat desc1, desc2;
-    // surf->detectAndCompute(img1c, noArray(), kp1, desc1);
-    // surf->detectAndCompute(img2c, noArray(), kp2, desc2);
+    cout << "Calculating matches between images...\n";
+    for(uint16_t i = 0; i < cameraStates.size(); i++)
+    {
+        for(uint16_t j = 0; j < cameraStates.size(); j++)
+        {
+            //If correspondance to itself or if it has already been calc, disregard
+            if ( i == j || match_table[i][j].size() != 0) continue;
+            Mat desc1 = cameraStates[i].Descriptor;
+            Mat desc2 = cameraStates[j].Descriptor;
+            vector<vector<DMatch>> knn_matches;
+            matcher->knnMatch(desc1, desc2, knn_matches, 2);
+            std::vector<DMatch> good_matches;
+            for (size_t idx = 0; idx < knn_matches.size(); idx++)
+            {
+                if (knn_matches[idx][0].distance < ratio_thresh * knn_matches[idx][1].distance)
+                {
+                    good_matches.push_back(knn_matches[idx][0]);
+                }
+            }
 
+            match_table[i][j] = good_matches;
+        }
+    }
 
-    // vector<vector<DMatch>> knn_matches;
-    // matcher->knnMatch(desc1, desc2, knn_matches, 2);
-    // const float ratio_thresh = 0.7f;
-    // std::vector<DMatch> good_matches;
-    // for (size_t i = 0; i < knn_matches.size(); i++)
-    // {
-    //     if (knn_matches[i][0].distance < ratio_thresh * knn_matches[i][1].distance)
-    //     {
-    //         good_matches.push_back(knn_matches[i][0]);
-    //     }
-    // }
-    // cout << good_matches.size() << endl;
+    cout << "Finished calculating matches between images...\n";
 
-    // vector<Point2f> p2d1, p2d2;
-    // for(uint16_t i = 0; i < good_matches.size(); i++)
-    // {
-    //     p2d1.push_back( kp1[good_matches[i].queryIdx].pt );
-    //     p2d2.push_back( kp2[good_matches[i].trainIdx].pt );
-    // }
+    computeFirstPointCloud();
 
-    // Mat mask;
- 
-    // Mat E = findEssentialMat(p2d1, p2d2, K , RANSAC, 0.999, 1.0, mask);
-
-    // vector<cv::Point2f> inlier_match_points1, inlier_match_points2;
-    // for(int i = 0; i < mask.rows; i++) {
-    //     if(mask.at<unsigned char>(i)){
-    //         inlier_match_points1.push_back(p2d1[i]);
-    //         inlier_match_points2.push_back(p2d2[i]);
-    //     }
-    // }
-    // Mat R,t;
-    // mask.release();
-    // recoverPose(E, inlier_match_points1, inlier_match_points2, K, R, t, mask);
-
-    // if( (abs(determinant(R)) - 1.f) > 1e-7 )
-    // {
-    //     cout<<"Fucked up\n";
-    // }
-    // vector<cv::Point2f> triangulation_points1, triangulation_points2;
-    // for(int i = 0; i < mask.rows; i++) {
-    //     if(mask.at<unsigned char>(i)){
-
-    //         triangulation_points1.push_back (inlier_match_points1[i]);
-    //         triangulation_points2.push_back(inlier_match_points2[i]);
+    for(uint16_t i = 2; i < 6; i++ )
+    {
+        cout << "Calculating image number: " << i << endl;
+        std::vector<cv::Point3f> ppcloud;           
+        std::vector<cv::Point2f> imgPoints;
+        vector<KeyPoint> kp1, kp2;
+        int best_match_index = find_best_correspondance(i);
+        cout << "Found best correspondance: " << best_match_index << endl;
+        get_corresponding_keypoints(best_match_index, i, kp1, kp2 );
+        find_2d_3d_matches(best_match_index, i, imgPoints, ppcloud);
+        cv::Mat_<double> t,rvec,R;
+        cout << imgPoints.size() << endl;
+        cout << ppcloud.size() << endl;
+        cv::solvePnPRansac(ppcloud, imgPoints, K, noArray(), rvec, t, false);
+        //get rotation in 3x3 matrix form
+        Rodrigues(rvec, R);
         
-    //     }
-    // }
+        Mat P, rw, homogenised_3d_points;
+        hconcat(R, t, rw);
+        P = K * rw;
+        P.convertTo(P, CV_32F);
+        vector<Point2f> prevpts, currpts;
+        KeyPoint::convert(kp1, prevpts);
+        KeyPoint::convert(kp2, currpts);
+        cout<<"Triangulate Points\n";
+        triangulatePoints(cameraStates[best_match_index].P,  P, prevpts ,currpts, homogenised_3d_points );
+        cameraStates[i].P = P.clone();
+        assert(homogenised_3d_points.type() == CV_32F);
+        for(uint16_t col = 0; col < homogenised_3d_points.cols; col++)
+        {
+            Mat currPoint3d =  homogenised_3d_points.col(col);
+            currPoint3d /= currPoint3d.at<float>(3, 0);
+            Point3f p(
+                currPoint3d.at<float>(0, 0),
+                currPoint3d.at<float>(1, 0),
+                currPoint3d.at<float>(2, 0)
+            );
+            CloudPoint cp;
+            cp.index_of_2d_origin = vector<int>(cameraStates.size(), -1);
+            cp.pt = p;
+            cp.color = cameraStates[i].Image.at<Vec3b>(kp1[col].pt);
+            pcloud.push_back(cp);
+        }
 
-    // cout << R.type() << endl << t.type() <<endl;
-    // Mat rw1, rw2;
-    // hconcat(cRot, cT, rw1);
-    // hconcat(R ,t, rw2);
-    // Mat matched_img;
-    // drawMatches(img1c, kp1, img2c, kp2, good_matches, matched_img,  Scalar::all(-1), Scalar::all(-1), std::vector<char>(), DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
-
-    // Mat homogenised_3d_points;
-
-    // vector<Point3f> points_3f;
-    // Mat P = K * rw1;
-    // Mat P1 = K * rw2;
-    // P.convertTo(P, CV_32F);
-    // P1.convertTo(P1, CV_32F);
-
-    // cout << t << endl;
-    // triangulatePoints(P, P1, triangulation_points1, triangulation_points2, homogenised_3d_points );
-    // cout <<"homogenised_3d_points.type() :" << homogenised_3d_points.type() << endl;
-
-    // assert(homogenised_3d_points.type() == CV_32F);
-    // for(uint16_t i = 0; i < homogenised_3d_points.cols; i++)
-    // {
-    //     Mat currPoint3d =  homogenised_3d_points.col(i);
-    //     currPoint3d /= currPoint3d.at<float>(3, 0);
-    //     Point3f p(
-    //         currPoint3d.at<float>(0, 0),
-    //         currPoint3d.at<float>(1, 0),
-    //         currPoint3d.at<float>(2, 0)
-    //     );
-    //     points_3f.push_back(p);
-    // }
-
-    // vector<Point2f> reprojected_points, final_2d_points;
-    // vector<Point3f> final_3d_points;
-    // vector<float> reprojection_error;
-    // vector<double> dummy;
-    // projectPoints(points_3f, R, t, K, dummy, reprojected_points);
-    // float average_reprojection_error = 0;
-    // cout<< reprojected_points[0] <<"   " << triangulation_points2[0] <<  "\n\n\n\n\n\n";
-    // float d;
-    // for(uint16_t i = 0; i  < triangulation_points2.size(); i++)
-    // {
-    //     d = dist(triangulation_points2[i], reprojected_points[i]);
-    //     average_reprojection_error +=d;
-    //     if ( d < 1.f)
-    //     {
-    //         final_3d_points.push_back(points_3f[i]);
-    //         final_2d_points.push_back(triangulation_points1[i]);
-    //     }
-    // }
-    // average_reprojection_error = average_reprojection_error/triangulation_points2.size();
-    // cout << "Average reprojection error: " << average_reprojection_error << endl;
-    // d = 0; 
-    // average_reprojection_error = 0;
+        done_views.push_back(i);
+    }
 
 
 
@@ -223,36 +399,35 @@ int main(int argc, const char **argv)
 
 
 
+    cout << " Calc Point cloud\n";
+    //Convert Point3D into PointXYZRGB
+    pcl::PointCloud<pcl::PointXYZRGB>::Ptr point_cloud_ptr(new pcl::PointCloud<pcl::PointXYZRGB>);
+    pcl::PointCloud<pcl::PointXYZRGB>::Ptr point_cloud_ptr_filtered(new pcl::PointCloud<pcl::PointXYZRGB>);
+    for(uint16_t i = 0; i < pcloud.size(); i++)
+    {
+        pcl::PointXYZRGB basic_point;
+        basic_point.x = -1.f * pcloud[i].pt.x;
+        basic_point.y = -1.f * pcloud[i].pt.y;
+        basic_point.z = pcloud[i].pt.z;
+        Vec3b color = pcloud[i].color;
+        cout << "Finish calc color\n";
+        basic_point.b = color[0];
+        basic_point.g = color[1];
+        basic_point.r = color[2];
+        //cout<<"Basic point: "<< basic_point << endl; 
+        point_cloud_ptr->points.push_back(basic_point);
+    }
 
-    // //Convert Point3D into PointXYZRGB
-    // pcl::PointCloud<pcl::PointXYZRGB>::Ptr point_cloud_ptr(new pcl::PointCloud<pcl::PointXYZRGB>);
-    // pcl::PointCloud<pcl::PointXYZRGB>::Ptr point_cloud_ptr_filtered(new pcl::PointCloud<pcl::PointXYZRGB>);
-    // for(uint16_t i = 0; i < final_3d_points.size(); i++)
-    // {
-    //     pcl::PointXYZRGB basic_point;
-    //     basic_point.x = -1.f * final_3d_points[i].x;
-    //     basic_point.y = -1.f * final_3d_points[i].y;
-    //     basic_point.z = final_3d_points[i].z;
-    //     Vec3b color = img1c.at<Vec3b>(final_2d_points[i]);
-    //     basic_point.b = color[0];
-    //     basic_point.g = color[1];
-    //     basic_point.r = color[2];
-    //     //cout<<"Basic point: "<< basic_point << endl; 
-    //     point_cloud_ptr->points.push_back(basic_point);
-    // }
+    point_cloud_ptr->width = (int)point_cloud_ptr->points.size();
+    point_cloud_ptr->height = 1;
+    //Since the point cloud is sparse, remove all the NaN values automatically set by PCL
+    vector<int> indices;
+    point_cloud_ptr->is_dense = false;
 
-    // point_cloud_ptr->width = (int)point_cloud_ptr->points.size();
-    // point_cloud_ptr->height = 1;
-    // //Since the point cloud is sparse, remove all the NaN values automatically set by PCL
-    // vector<int> indices;
-    // point_cloud_ptr->is_dense = false;
-
-    // pcl::io::savePCDFileASCII("final.pcd", *point_cloud_ptr);
-    // resize(matched_img, matched_img, Size(matched_img.cols/4, matched_img.rows/4));
-    // imshow("matched_img", matched_img);
-    // if (waitKey(0) == 27)
-    // {
-    //     destroyAllWindows();
-    //     return 1;
-    // }
+    pcl::io::savePCDFileASCII("final.pcd", *point_cloud_ptr);
+    if (waitKey(0) == 27)
+    {
+        destroyAllWindows();
+        return 1;
+    }
 }
