@@ -18,6 +18,7 @@ float dist(Point2f a, Point2f b)
 
 const float dThreshold = 1.f;
 const float ratio_thresh = 0.8f;
+const float acceptable_error = 20.f;
 
 Mat cRot = Mat::eye(3, 3, CV_64F);
 Mat cT = ( Mat1d(3,1) << 0.f , 0.f , 0.f );
@@ -140,14 +141,13 @@ void computeFirstPointCloud()
     vector<double> dummy;
     projectPoints(points_3f, R, t, K, dummy, reprojected_points);
     float average_reprojection_error = 0;
-    cout<< reprojected_points[0] <<"   " << triangulation_points2[0] <<  "\n\n\n\n\n\n";
     float d;
     for(uint16_t i = 0; i  < triangulation_points2.size(); i++)
     {
         d = dist(triangulation_points2[i], reprojected_points[i]);
         average_reprojection_error +=d;
         if ( d < 1.f)
-        {
+        {   
             CloudPoint pc;
             pc.index_of_2d_origin = vector<int>(cameraStates.size(), -1);
             pc.pt = points_3f[i]; 
@@ -178,7 +178,6 @@ int find_best_correspondance(int view_to_eval)
         int done_view_idx = done_views[i];
         int correspondances = 0;
         vector<DMatch> good_matches = match_table[done_view_idx][view_to_eval];
-        cout<<"Size of good matches: "<< good_matches.size() << endl;
         for (unsigned int match  = 0; match < good_matches.size(); match++) 
         {
             // the index of the matching 2D point in <old_view>
@@ -201,9 +200,9 @@ int find_best_correspondance(int view_to_eval)
         {
             max_correspondances = correspondances;
             best_match_index = done_view_idx;
-            cout << "Best match is image "<< i << " with " << max_correspondances << " matches\n";
         }
     }
+    cout << "Best match for image "<< view_to_eval <<" is image "<< best_match_index << " with " << max_correspondances << " matches\n";
     return best_match_index;
 }
 
@@ -341,9 +340,8 @@ int main(int argc, const char **argv)
         cout << "Found best correspondance: " << best_match_index << endl;
         find_2d_3d_matches(best_match_index, i, imgPoints, ppcloud, kp1, kp2, kpidx1, kpidx2);
         cv::Mat t,rvec,R;
-        cout << imgPoints.size() << endl;
-        cout << ppcloud.size() << endl;
-        cv::solvePnPRansac(ppcloud, imgPoints, K, noArray(), rvec, t, false, 2000, 1.f);
+        assert(ppcloud.size() == imgPoints.size());
+        cv::solvePnPRansac(ppcloud, imgPoints, K, noArray(), rvec, t, false);
         //get rotation in 3x3 matrix form
         Rodrigues(rvec, R);
         cameraStates[i].R = R.clone();
@@ -387,7 +385,7 @@ int main(int argc, const char **argv)
         {
             d = dist(currpts[pt_idx], reprojected_points[pt_idx]);
             average_reprojection_error +=d;
-            if ( d < 10.f)
+            if ( d < acceptable_error)
             {
                 CloudPoint pc;
                 pc.index_of_2d_origin = vector<int>(cameraStates.size(), -1);
