@@ -1,13 +1,5 @@
 #include "common-includes.h"
 
-#define scaler 1;
-
-/*
-TODO:
-    1. Redo how relative scale works (need informtaion from 3 consecutive frames. aka 2 consecutive frame pairs) 
-    2. https://research.latinxinai.org/papers/cvpr/2021/pdf/59_CameraReady_59.pdf refer for using absolute scale
-*/
-
 float dist(Point2f a, Point2f b)
 {
    float dist =  (a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y);
@@ -26,10 +18,10 @@ Mat K = (Mat1d(3,3) << 2759.48, 0, 1520.69,
                             0, 2764.16, 1006.81, 
                             0, 0, 1); 
 
-struct CloudPoint {
-cv::Point3f pt;
-vector<int>index_of_2d_origin;
-cv::Vec3b color;
+struct DataPoint {
+    Point3f point;
+    vector<int> keypoint_index;
+    Vec3b color;
 };
 
 
@@ -42,7 +34,7 @@ struct CamState{
     Mat P;
 };
 
-vector<CloudPoint> pcloud; //our global 3D point cloud
+vector<DataPoint> point_cloud; //our global 3D point cloud
 vector<CamState> cameraStates;
 map<int, vector<vector<DMatch>> > match_table;
 vector<int> done_views;
@@ -148,13 +140,13 @@ void computeFirstPointCloud()
         average_reprojection_error +=d;
         if ( d < 1.f)
         {   
-            CloudPoint pc;
-            pc.index_of_2d_origin = vector<int>(cameraStates.size(), -1);
-            pc.pt = points_3f[i]; 
-            pc.index_of_2d_origin[0] = triangulation_indices1[i];
-            pc.index_of_2d_origin[1] = triangulation_indices2[i];
+            DataPoint pc;
+            pc.keypoint_index = vector<int>(cameraStates.size(), -1);
+            pc.point = points_3f[i]; 
+            pc.keypoint_index[0] = triangulation_indices1[i];
+            pc.keypoint_index[1] = triangulation_indices2[i];
             pc.color = cameraStates[0].Image.at<Vec3b>(kp1[triangulation_indices1[i]].pt);
-            pcloud.push_back(pc);
+            point_cloud.push_back(pc);
         }
     }
     average_reprojection_error = average_reprojection_error/triangulation_points2.size();
@@ -171,8 +163,8 @@ void computeFirstPointCloud()
 int find_best_correspondance(int view_to_eval)
 {
     int max_correspondances = -1;
-    int best_match_index = -1;
-    vector<int> pcloud_status(pcloud.size(),0);
+    int best_match_view = -1;
+    vector<int> point_cloud_status(point_cloud.size(),0);
     for(uint16_t i = 0; i < done_views.size(); i++ )
     {
         int done_view_idx = done_views[i];
@@ -183,14 +175,14 @@ int find_best_correspondance(int view_to_eval)
             // the index of the matching 2D point in <old_view>
             int idx_in_old_view = good_matches[match].queryIdx;
             //scan the existing cloud to see if this point from <old_view>exists 
-            for (unsigned int pcldp = 0; pcldp < pcloud.size(); pcldp++) 
+            for (unsigned int pcldp = 0; pcldp < point_cloud.size(); pcldp++) 
             {
                 // see if this 2D point from <old_view> contributed to this 3D point in the cloud
-                if (idx_in_old_view == pcloud[pcldp].index_of_2d_origin[done_view_idx] && pcloud_status[pcldp] == 0) //prevent duplicates
+                if (idx_in_old_view == point_cloud[pcldp].keypoint_index[done_view_idx] && point_cloud_status[pcldp] == 0) //prevent duplicates
                 {
                     //2d point in image <working_view>
-                    pcloud_status[pcldp] = 1;
-                    pcloud[pcldp].index_of_2d_origin[view_to_eval] = good_matches[match].trainIdx;
+                    point_cloud_status[pcldp] = 1;
+                    point_cloud[pcldp].keypoint_index[view_to_eval] = good_matches[match].trainIdx;
                     correspondances++;
                     break;
                 }
@@ -199,42 +191,42 @@ int find_best_correspondance(int view_to_eval)
         if(correspondances > max_correspondances)
         {
             max_correspondances = correspondances;
-            best_match_index = done_view_idx;
+            best_match_view = done_view_idx;
         }
     }
-    cout << "Best match for image "<< view_to_eval <<" is image "<< best_match_index << " with " << max_correspondances << " matches\n";
-    return best_match_index;
+    cout << "Best match for image "<< view_to_eval <<" is image "<< best_match_view << " with " << max_correspondances << " matches\n";
+    return best_match_view;
 }
 
 
-void find_2d_3d_matches(int view1, int view2, vector<Point2f>& imagePoints, vector<Point3f>& ppcloud, vector<KeyPoint>& kp1, vector<KeyPoint>& kp2, vector<int>& kpidx1, vector<int>& kpidx2)
+void find_2d_3d_matches(int view1, int view2, vector<Point2f>& imagePoints, vector<Point3f>& ppoint_cloud, vector<KeyPoint>& kp1, vector<KeyPoint>& kp2, vector<int>& kpidx1, vector<int>& kpidx2)
 {
-    ppcloud.clear();
+    ppoint_cloud.clear();
     kp1.clear();
     kp2.clear();
     kpidx1.clear();
     kpidx2.clear();
 
-    vector<int> pcloud_status(pcloud.size(),0);
+    vector<int> point_cloud_status(point_cloud.size(),0);
     vector<DMatch> good_matches = match_table[view1][view2];
     for (unsigned int match  = 0; match < good_matches.size(); match++) 
     {
         // the index of the matching 2D point in <old_view>
         int idx_in_old_view = good_matches[match].queryIdx;
         //scan the existing cloud to see if this point from <old_view>exists 
-        for (unsigned int pcldp = 0; pcldp < pcloud.size(); pcldp++) 
+        for (unsigned int pcldp = 0; pcldp < point_cloud.size(); pcldp++) 
         {
             // see if this 2D point from <old_view> contributed to this 3D point in the cloud
-            if (idx_in_old_view == pcloud[pcldp].index_of_2d_origin[view1] && pcloud_status[pcldp] == 0) //prevent duplicates
+            if (idx_in_old_view == point_cloud[pcldp].keypoint_index[view1] && point_cloud_status[pcldp] == 0) //prevent duplicates
             {
-                ppcloud.push_back(pcloud[pcldp].pt);
+                ppoint_cloud.push_back(point_cloud[pcldp].point);
                 imagePoints.push_back( cameraStates[view2].keypoints[ good_matches[match].trainIdx ].pt) ;
                 kp1.push_back(cameraStates[view1].keypoints[ good_matches[match].queryIdx ]);
                 kp2.push_back(cameraStates[view2].keypoints[ good_matches[match].trainIdx ]);
                 kpidx1.push_back(good_matches[match].queryIdx);
                 kpidx2.push_back(good_matches[match].trainIdx);
                 //2d point in image <working_view>
-                pcloud_status[pcldp] = 1;
+                point_cloud_status[pcldp] = 1;
                 break;
             }
         }
@@ -329,42 +321,42 @@ int main(int argc, const char **argv)
 
     computeFirstPointCloud();
 
-    for(uint16_t i = 2; i < cameraStates.size(); i++ )
+    for(uint16_t current_view = 2; current_view < cameraStates.size(); current_view++ )
     {
-        cout << "Calculating image number: " << i << endl;
-        std::vector<cv::Point3f> ppcloud;           
+        cout << "Calculating image number: " << current_view << endl;
+        std::vector<cv::Point3f> ppoint_cloud;           
         std::vector<cv::Point2f> imgPoints;
         vector<KeyPoint> kp1, kp2;
         vector<int> kpidx1, kpidx2;
-        int best_match_index = find_best_correspondance(i);
-        cout << "Found best correspondance: " << best_match_index << endl;
-        find_2d_3d_matches(best_match_index, i, imgPoints, ppcloud, kp1, kp2, kpidx1, kpidx2);
+        int best_match_view = find_best_correspondance(current_view);
+        cout << "Found best correspondance: " << best_match_view << endl;
+        find_2d_3d_matches(best_match_view, current_view, imgPoints, ppoint_cloud, kp1, kp2, kpidx1, kpidx2);
         cv::Mat t,rvec,R;
-        assert(ppcloud.size() == imgPoints.size());
-        cv::solvePnPRansac(ppcloud, imgPoints, K, noArray(), rvec, t, false);
+        assert(ppoint_cloud.size() == imgPoints.size());
+        cv::solvePnPRansac(ppoint_cloud, imgPoints, K, noArray(), rvec, t, false);
         //get rotation in 3x3 matrix form
         Rodrigues(rvec, R);
-        cameraStates[i].R = R.clone();
-        cameraStates[i].t = t.clone();
+        cameraStates[current_view].R = R.clone();
+        cameraStates[current_view].t = t.clone();
 
         Mat P, rw, homogenised_3d_points;
         hconcat(R, t, rw);
-        cout << "Pose of "<< i <<" is " << rw <<endl;
+        cout << "Pose of "<< current_view <<" is " << rw <<endl;
         P = K * rw;
         P.convertTo(P, CV_32F);
         vector<Point2f> prevpts, currpts;
         KeyPoint::convert(kp1, prevpts);
         KeyPoint::convert(kp2, currpts);
         cout<<"Triangulate Points\n";
-        triangulatePoints(cameraStates[best_match_index].P,  P, prevpts ,currpts, homogenised_3d_points );
-        cameraStates[i].P = P.clone();
+        triangulatePoints(cameraStates[best_match_view].P,  P, prevpts ,currpts, homogenised_3d_points );
+        cameraStates[current_view].P = P.clone();
         assert(homogenised_3d_points.type() == CV_32F);
         vector<Point3f> points_3f;
         vector<Point2f> reprojected_points;
         vector<float> reprojection_error;
         vector<double> dummy;
         float average_reprojection_error = 0;
-        float d; 
+        float distance; 
         for(uint16_t col = 0; col < homogenised_3d_points.cols; col++)
         {
             Mat currPoint3d =  homogenised_3d_points.col(col);
@@ -383,17 +375,17 @@ int main(int argc, const char **argv)
         cout<<"Calculating reprojection error...\n";
         for(uint16_t pt_idx = 0; pt_idx  < currpts.size(); pt_idx++)
         {
-            d = dist(currpts[pt_idx], reprojected_points[pt_idx]);
-            average_reprojection_error +=d;
-            if ( d < acceptable_error)
+            distance = dist(currpts[pt_idx], reprojected_points[pt_idx]);
+            average_reprojection_error +=distance;
+            if ( distance < acceptable_error)
             {
-                CloudPoint pc;
-                pc.index_of_2d_origin = vector<int>(cameraStates.size(), -1);
-                pc.pt = points_3f[pt_idx]; 
-                pc.index_of_2d_origin[best_match_index] = kpidx1[pt_idx];
-                pc.index_of_2d_origin[i] = kpidx2[pt_idx];
-                pc.color = cameraStates[best_match_index].Image.at<Vec3b>( cameraStates[best_match_index].keypoints[kpidx1[pt_idx]].pt);
-                pcloud.push_back(pc);
+                DataPoint pc;
+                pc.keypoint_index = vector<int>(cameraStates.size(), -1);
+                pc.point = points_3f[pt_idx]; 
+                pc.keypoint_index[best_match_view] = kpidx1[pt_idx];
+                pc.keypoint_index[current_view] = kpidx2[pt_idx];
+                pc.color = cameraStates[best_match_view].Image.at<Vec3b>( cameraStates[best_match_view].keypoints[kpidx1[pt_idx]].pt);
+                point_cloud.push_back(pc);
             }
         }
         average_reprojection_error = average_reprojection_error/currpts.size();
@@ -402,7 +394,7 @@ int main(int argc, const char **argv)
 
 
 
-        done_views.push_back(i);
+        done_views.push_back(current_view);
     }
 
 
@@ -431,13 +423,13 @@ int main(int argc, const char **argv)
     //Convert Point3D into PointXYZRGB
     pcl::PointCloud<pcl::PointXYZRGB>::Ptr point_cloud_ptr(new pcl::PointCloud<pcl::PointXYZRGB>);
     pcl::PointCloud<pcl::PointXYZRGB>::Ptr point_cloud_ptr_filtered(new pcl::PointCloud<pcl::PointXYZRGB>);
-    for(uint16_t i = 0; i < pcloud.size(); i++)
+    for(uint16_t i = 0; i < point_cloud.size(); i++)
     {
         pcl::PointXYZRGB basic_point;
-        basic_point.x = -1.f * pcloud[i].pt.x;
-        basic_point.y = -1.f * pcloud[i].pt.y;
-        basic_point.z = pcloud[i].pt.z;
-        Vec3b color = pcloud[i].color;
+        basic_point.x = -1.f * point_cloud[i].point.x;
+        basic_point.y = -1.f * point_cloud[i].point.y;
+        basic_point.z = point_cloud[i].point.z;
+        Vec3b color = point_cloud[i].color;
         basic_point.b = color[0];
         basic_point.g = color[1];
         basic_point.r = color[2];
