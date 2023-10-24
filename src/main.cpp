@@ -234,6 +234,35 @@ void find_2d_3d_matches(int view1, int view2, vector<Point2f>& imagePoints, vect
 }
 
 
+void addToGlobalPC(int currentView, vector<DataPoint>& pc_to_add)
+{
+    int matches = 0;
+    cout << "Appending PC of size " << pc_to_add.size() << endl;
+    for(uint16_t idx = 0; idx < pc_to_add.size(); idx++)
+    {
+        int index_in_current_view = pc_to_add[idx].keypoint_index[currentView];
+        for(uint16_t i = 0; i < done_views.size(); i++ )
+        {
+            int view_to_eval = done_views[i];
+            vector<DMatch> view1Match = match_table[view_to_eval][currentView];
+            for(uint16_t match = 0; match < view1Match.size(); match++)
+            {
+                if(index_in_current_view == view1Match[match].trainIdx)
+                {
+                    pc_to_add[idx].keypoint_index[view_to_eval] = view1Match[match].queryIdx;
+                    matches++;
+                    break;
+                }
+            } 
+            
+        }
+
+    }
+    cout<<"Matches : " << matches << endl;
+    point_cloud.insert(point_cloud.end(),pc_to_add.begin(), pc_to_add.end());
+    cout << pc_to_add.size() <<" points added to global point cloud! Current size is " << point_cloud.size() << endl;
+}
+
 int main(int argc, const char **argv)
 {
     if(CV_VERSION_MAJOR < 4)
@@ -303,7 +332,7 @@ int main(int argc, const char **argv)
         for(uint16_t j = 0; j < cameraStates.size(); j++)
         {
             //If correspondance to itself or if it has already been calc, disregard
-            if ( i == j || match_table[i][j].size() || match_table[j][i].size()) continue;
+            if ( i == j ) continue;
             Mat desc1 = cameraStates[i].Descriptor;
             Mat desc2 = cameraStates[j].Descriptor;
             vector<vector<DMatch>> knn_matches;
@@ -377,24 +406,28 @@ int main(int argc, const char **argv)
         assert(currpts.size() == reprojected_points.size());
         assert(kpidx1.size() == reprojected_points.size());
         cout<<"Calculating reprojection error...\n";
+        vector<DataPoint> pc_to_add;
         for(uint16_t pt_idx = 0; pt_idx  < currpts.size(); pt_idx++)
         {
             distance = dist(currpts[pt_idx], reprojected_points[pt_idx]);
             average_reprojection_error +=distance;
             if ( distance < acceptable_error)
             {
-                DataPoint pc;
-                pc.keypoint_index = vector<int>(cameraStates.size(), -1);
-                pc.point = points_3f[pt_idx]; 
-                pc.keypoint_index[best_match_view] = kpidx1[pt_idx];
-                pc.keypoint_index[current_view] = kpidx2[pt_idx];
-                pc.color = cameraStates[best_match_view].Image.at<Vec3b>( cameraStates[best_match_view].keypoints[kpidx1[pt_idx]].pt);
-                point_cloud.push_back(pc);
+                DataPoint data_point;
+                data_point.keypoint_index = vector<int>(cameraStates.size(), -1);
+                data_point.point = points_3f[pt_idx]; 
+                data_point.keypoint_index[best_match_view] = kpidx1[pt_idx];
+                data_point.keypoint_index[current_view] = kpidx2[pt_idx];
+                data_point.color = cameraStates[best_match_view].Image.at<Vec3b>( cameraStates[best_match_view].keypoints[kpidx1[pt_idx]].pt);
+                pc_to_add.push_back(data_point);
             }
         }
+
+        addToGlobalPC(current_view, pc_to_add);
+
         average_reprojection_error = average_reprojection_error/currpts.size();
         cout<<"Average RE: " << average_reprojection_error << endl;
-
+        cout<<endl<<endl;
 
 
 
@@ -423,7 +456,7 @@ int main(int argc, const char **argv)
 
 
 
-    cout << " Calc Point cloud\n";
+    cout << "Creating PCL Point Cloud...\n";
     //Convert Point3D into PointXYZRGB
     pcl::PointCloud<pcl::PointXYZRGB>::Ptr point_cloud_ptr(new pcl::PointCloud<pcl::PointXYZRGB>);
     pcl::PointCloud<pcl::PointXYZRGB>::Ptr point_cloud_ptr_filtered(new pcl::PointCloud<pcl::PointXYZRGB>);
