@@ -12,8 +12,6 @@ const float dThreshold = 1.f;
 const float ratio_thresh = 0.8f;
 const float acceptable_error = 20.f;
 
-Mat cRot = Mat::eye(3, 3, CV_64F);
-Mat cT = ( Mat1d(3,1) << 0.f , 0.f , 0.f );
 Mat K = (Mat1d(3,3) << 2759.48, 0, 1520.69, 
                             0, 2764.16, 1006.81, 
                             0, 0, 1); 
@@ -42,6 +40,7 @@ vector<int> done_views;
 
 void computeFirstPointCloud()
 {
+    cout <<"Evaluating images 0 and 1 \n";
     vector<Point2f> p2d1, p2d2;
     vector<int> indices1, indices2;
     vector<KeyPoint> kp1, kp2;
@@ -97,7 +96,7 @@ void computeFirstPointCloud()
     cameraStates[1].t = t.clone();
     cout << R.type() << endl << t.type() <<endl;
     Mat rw1, rw2;
-    hconcat(cRot, cT, rw1);
+    hconcat(cameraStates[0].R, cameraStates[0].t, rw1);
     hconcat(R ,t, rw2);
     cout<<"OG P is " << rw2 << endl;
     Mat matched_img;
@@ -175,14 +174,14 @@ int find_best_correspondance(int view_to_eval)
             // the index of the matching 2D point in <old_view>
             int idx_in_old_view = good_matches[match].queryIdx;
             //scan the existing cloud to see if this point from <old_view>exists 
-            for (unsigned int pcldp = 0; pcldp < point_cloud.size(); pcldp++) 
+            for (unsigned int pc_idx = 0; pc_idx < point_cloud.size(); pc_idx++) 
             {
                 // see if this 2D point from <old_view> contributed to this 3D point in the cloud
-                if (idx_in_old_view == point_cloud[pcldp].keypoint_index[done_view_idx] && point_cloud_status[pcldp] == 0) //prevent duplicates
+                if (idx_in_old_view == point_cloud[pc_idx].keypoint_index[done_view_idx] && point_cloud_status[pc_idx] == 0) //prevent duplicates
                 {
                     //2d point in image <working_view>
-                    point_cloud_status[pcldp] = 1;
-                    point_cloud[pcldp].keypoint_index[view_to_eval] = good_matches[match].trainIdx;
+                    point_cloud_status[pc_idx] = 1;
+                    point_cloud[pc_idx].keypoint_index[view_to_eval] = good_matches[match].trainIdx;
                     correspondances++;
                     break;
                 }
@@ -282,7 +281,12 @@ int main(int argc, const char **argv)
         
     }
     cout << "Finished reading images...\n";
-    assert(cameraStates.size() > 2);
+
+    if(cameraStates.size() <= 2)
+    {
+        cout << "The SFM pipeline needs atleast 3 images to function!" << endl;
+        assert(cameraStates.size() > 2);
+    }
 
     //Populate match table with empty vectors
     for(uint16_t i =0; i < cameraStates.size(); i++)
