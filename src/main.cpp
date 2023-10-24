@@ -95,17 +95,17 @@ void computeFirstPointCloud()
     cameraStates[1].R = R.clone();
     cameraStates[1].t = t.clone();
     cout << R.type() << endl << t.type() <<endl;
-    Mat rw1, rw2;
-    hconcat(cameraStates[0].R, cameraStates[0].t, rw1);
-    hconcat(R ,t, rw2);
-    cout<<"OG P is " << rw2 << endl;
+    Mat pose1, pose2;
+    hconcat(cameraStates[0].R, cameraStates[0].t, pose1);
+    hconcat(R ,t, pose2);
+    cout<<"OG P is " << pose2 << endl;
     Mat matched_img;
 
     Mat homogenised_3d_points;
 
     vector<Point3f> points_3f;
-    Mat P = K * rw1;
-    Mat P1 = K * rw2;
+    Mat P = K * pose1;
+    Mat P1 = K * pose2;
     P.convertTo(P, CV_32F);
     cameraStates[0].P = P.clone();
     P1.convertTo(P1, CV_32F);
@@ -343,10 +343,10 @@ int main(int argc, const char **argv)
         cameraStates[current_view].R = R.clone();
         cameraStates[current_view].t = t.clone();
 
-        Mat P, rw, homogenised_3d_points;
-        hconcat(R, t, rw);
-        cout << "Pose of "<< current_view <<" is " << rw <<endl;
-        P = K * rw;
+        Mat P, currpose, homogenised_3d_points;
+        hconcat(R, t, currpose);
+        cout << "Pose of "<< current_view <<" is " << currpose <<endl;
+        P = K * currpose;
         P.convertTo(P, CV_32F);
         vector<Point2f> prevpts, currpts;
         KeyPoint::convert(kp1, prevpts);
