@@ -43,7 +43,6 @@ Ptr<DescriptorMatcher> matcher;
 void readImages(set<fs::path>& image_paths)
 {
     surf = SURF::create();
-    matcher = DescriptorMatcher::create(DescriptorMatcher::FLANNBASED);
     cout << "Reading images...\n";
     for(auto image_path : image_paths)
     {
@@ -71,6 +70,45 @@ void readImages(set<fs::path>& image_paths)
 
 }
 
+void calculateImageFeatures()
+{
+    matcher = DescriptorMatcher::create(DescriptorMatcher::FLANNBASED);
+    //Populate match table with empty vectors
+    for(uint16_t i = 0; i < cameraStates.size(); i++)
+    {
+        for(uint16_t j = 0; j < cameraStates.size(); j++)
+        {
+            match_table[i].push_back(vector<DMatch>());
+        }
+    }
+
+    cout << "Calculating matches between images...\n";
+    for(uint16_t i = 0; i < cameraStates.size(); i++)
+    {
+        for(uint16_t j = 0; j < cameraStates.size(); j++)
+        {
+            //If correspondance to itself or if it has already been calc, disregard
+            if ( i == j ) continue;
+            Mat desc1 = cameraStates[i].Descriptor;
+            Mat desc2 = cameraStates[j].Descriptor;
+            vector<vector<DMatch>> knn_matches;
+            matcher->knnMatch(desc1, desc2, knn_matches, 2);
+            std::vector<DMatch> good_matches;
+            for (size_t idx = 0; idx < knn_matches.size(); idx++)
+            {
+                if (knn_matches[idx][0].distance < ratio_thresh * knn_matches[idx][1].distance)
+                {
+                    good_matches.push_back(knn_matches[idx][0]);
+                }
+            }
+
+            match_table[i][j] = good_matches;
+        }
+    }
+
+    cout << "Finished calculating matches between images...\n";
+
+}
 
 void computeFirstPointCloud()
 {
@@ -347,41 +385,7 @@ int main(int argc, const char **argv)
     }
     
     readImages(image_paths);
-
-    //Populate match table with empty vectors
-    for(uint16_t i = 0; i < cameraStates.size(); i++)
-    {
-        for(uint16_t j = 0; j < cameraStates.size(); j++)
-        {
-            match_table[i].push_back(vector<DMatch>());
-        }
-    }
-
-    cout << "Calculating matches between images...\n";
-    for(uint16_t i = 0; i < cameraStates.size(); i++)
-    {
-        for(uint16_t j = 0; j < cameraStates.size(); j++)
-        {
-            //If correspondance to itself or if it has already been calc, disregard
-            if ( i == j ) continue;
-            Mat desc1 = cameraStates[i].Descriptor;
-            Mat desc2 = cameraStates[j].Descriptor;
-            vector<vector<DMatch>> knn_matches;
-            matcher->knnMatch(desc1, desc2, knn_matches, 2);
-            std::vector<DMatch> good_matches;
-            for (size_t idx = 0; idx < knn_matches.size(); idx++)
-            {
-                if (knn_matches[idx][0].distance < ratio_thresh * knn_matches[idx][1].distance)
-                {
-                    good_matches.push_back(knn_matches[idx][0]);
-                }
-            }
-
-            match_table[i][j] = good_matches;
-        }
-    }
-
-    cout << "Finished calculating matches between images...\n";
+    calculateImageFeatures();
 
     computeFirstPointCloud();
 
@@ -418,7 +422,6 @@ int main(int argc, const char **argv)
         vector<Point3f> points_3f;
         vector<Point2f> reprojected_points;
         vector<float> reprojection_error;
-        vector<double> dummy;
         float average_reprojection_error = 0;
         float distance; 
         for(uint16_t col = 0; col < homogenised_3d_points.cols; col++)
@@ -433,7 +436,7 @@ int main(int argc, const char **argv)
             points_3f.push_back(p);
         }
 
-        projectPoints(points_3f, R, t, K, dummy, reprojected_points);
+        projectPoints(points_3f, R, t, K, noArray(), reprojected_points);
         assert(currpts.size() == reprojected_points.size());
         assert(kpidx1.size() == reprojected_points.size());
         cout<<"Calculating reprojection error...\n";
