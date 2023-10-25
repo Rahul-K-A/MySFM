@@ -20,6 +20,7 @@
 #include <pcl/io/pcd_io.h>
 #include <cstdlib>
 #include <map>
+#include <cvsba/cvsba.h>
 
 using namespace std;
 using namespace cv;
