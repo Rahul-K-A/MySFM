@@ -78,7 +78,8 @@ void computeFirstPointCloud()
 
     if( (abs(determinant(R)) - 1.f) > 1e-7 )
     {
-        cout<<"Fucked up\n";
+        cout<<"R matrix is messed up!\n";
+        assert(false);
     }
     vector<int> triangulation_indices1, triangulation_indices2;
     vector<cv::Point2f> triangulation_points1, triangulation_points2;
@@ -169,7 +170,7 @@ int find_best_correspondance(int view_to_eval)
         int done_view_idx = done_views[i];
         int correspondances = 0;
         vector<DMatch> good_matches = match_table[done_view_idx][view_to_eval];
-        for (unsigned int match  = 0; match < good_matches.size(); match++) 
+                for (unsigned int match  = 0; match < good_matches.size(); match++) 
         {
             // the index of the matching 2D point in <old_view>
             int idx_in_old_view = good_matches[match].queryIdx;
@@ -234,13 +235,14 @@ void find_2d_3d_matches(int view1, int view2, vector<Point2f>& imagePoints, vect
 }
 
 
-void addToGlobalPC(int currentView, vector<DataPoint>& pc_to_add)
+void addToGlobalPC(int prevView, int currentView, vector<DataPoint>& pc_to_add)
 {
     int matches = 0;
     cout << "Appending PC of size " << pc_to_add.size() << endl;
     for(uint16_t idx = 0; idx < pc_to_add.size(); idx++)
     {
         int index_in_current_view = pc_to_add[idx].keypoint_index[currentView];
+        int index_in_previous_view = pc_to_add[idx].keypoint_index[prevView]
         for(uint16_t i = 0; i < done_views.size(); i++ )
         {
             int view_to_eval = done_views[i];
@@ -254,8 +256,28 @@ void addToGlobalPC(int currentView, vector<DataPoint>& pc_to_add)
                     break;
                 }
             } 
+
+            if(view_to_eval == prevView)
+            {
+                continue;
+            }
+            vector<DMatch> view2Match = match_table[view_to_eval][prevView];
+            for(uint16_t match = 0; match < view2Match.size(); match++)
+            {
+                if(index_in_previous_view == view2Match[match].trainIdx)
+                {
+                    if(pc_to_add[idx].keypoint_index[view_to_eval] != -1)
+                    {
+                        break;
+                    }
+                    pc_to_add[idx].keypoint_index[view_to_eval] = view2Match[match].queryIdx;
+                    matches++;
+                    break;
+                }
+            } 
             
         }
+        
 
     }
     cout<<"Matches : " << matches << endl;
@@ -411,7 +433,7 @@ int main(int argc, const char **argv)
         {
             distance = dist(currpts[pt_idx], reprojected_points[pt_idx]);
             average_reprojection_error +=distance;
-            if ( distance < acceptable_error)
+            if ( distance < acceptable_error) 
             {
                 DataPoint data_point;
                 data_point.keypoint_index = vector<int>(cameraStates.size(), -1);
@@ -423,7 +445,7 @@ int main(int argc, const char **argv)
             }
         }
 
-        addToGlobalPC(current_view, pc_to_add);
+        addToGlobalPC(best_match_view, current_view, pc_to_add);
 
         average_reprojection_error = average_reprojection_error/currpts.size();
         cout<<"Average RE: " << average_reprojection_error << endl;
