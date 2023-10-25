@@ -12,7 +12,7 @@ const float dThreshold = 1.f;
 const float ratio_thresh = 0.8f;
 const float acceptable_error = 20.f;
 
-Mat K = (Mat1d(3,3) << 2759.48, 0, 1520.69, 
+Mat K = (Mat1d(3,3) <<      2759.48, 0, 1520.69, 
                             0, 2764.16, 1006.81, 
                             0, 0, 1); 
 
@@ -36,6 +36,40 @@ vector<DataPoint> point_cloud; //our global 3D point cloud
 vector<CamState> cameraStates;
 map<int, vector<vector<DMatch>> > match_table;
 vector<int> done_views;
+Ptr<SURF> surf;
+Ptr<DescriptorMatcher> matcher;
+
+
+void readImages(set<fs::path>& image_paths)
+{
+    surf = SURF::create();
+    matcher = DescriptorMatcher::create(DescriptorMatcher::FLANNBASED);
+    cout << "Reading images...\n";
+    for(auto image_path : image_paths)
+    {
+        cout << "Reading image: " << image_path.c_str() << endl;
+        Mat img = imread(image_path.c_str(), IMREAD_COLOR);
+        vector<KeyPoint> keypoint;
+        Mat descriptor;
+        CamState currCamState;
+        img.copyTo(currCamState.Image);
+        Mat img_gray;
+        cvtColor(img, img_gray, COLOR_BGR2GRAY);
+        surf->detectAndCompute(img_gray, noArray(), keypoint, descriptor);
+        currCamState.keypoints = keypoint;
+        descriptor.copyTo(currCamState.Descriptor);
+        cameraStates.push_back(currCamState);
+        
+    }
+    cout << "Finished reading " << cameraStates.size() <<" images...\n";
+    if(cameraStates.size() <= 2)
+    {
+        cout << "The SFM pipeline needs atleast 3 images to function!" << endl;
+        assert(cameraStates.size() > 2);
+    }
+    return;
+
+}
 
 
 void computeFirstPointCloud()
@@ -242,7 +276,7 @@ void addToGlobalPC(int prevView, int currentView, vector<DataPoint>& pc_to_add)
     for(uint16_t idx = 0; idx < pc_to_add.size(); idx++)
     {
         int index_in_current_view = pc_to_add[idx].keypoint_index[currentView];
-        int index_in_previous_view = pc_to_add[idx].keypoint_index[prevView]
+        int index_in_previous_view = pc_to_add[idx].keypoint_index[prevView];
         for(uint16_t i = 0; i < done_views.size(); i++ )
         {
             int view_to_eval = done_views[i];
@@ -305,42 +339,17 @@ int main(int argc, const char **argv)
         dataset_source_dir.pop_back();
     }
 
-    set<fs::path> im_paths;
+    set<fs::path> image_paths;
     string dataset_image_path = dataset_source_dir + string("/images");
     for (const auto & entry : fs::directory_iterator(dataset_image_path))
     {
-        im_paths.insert(entry.path());
+        image_paths.insert(entry.path());
     }
     
-    Ptr<SURF> surf = SURF::create();
-    Ptr<DescriptorMatcher> matcher = DescriptorMatcher::create(DescriptorMatcher::FLANNBASED);
-    cout << "Reading images...\n";
-    for(auto image_path : im_paths)
-    {
-        cout << "Reading image: " << image_path.c_str() << endl;
-        Mat img = imread(image_path.c_str(), IMREAD_COLOR);
-        vector<KeyPoint> keypoint;
-        Mat descriptor;
-        CamState currCamState;
-        img.copyTo(currCamState.Image);
-        Mat img_gray;
-        cvtColor(img, img_gray, COLOR_BGR2GRAY);
-        surf->detectAndCompute(img_gray, noArray(), keypoint, descriptor);
-        currCamState.keypoints = keypoint;
-        descriptor.copyTo(currCamState.Descriptor);
-        cameraStates.push_back(currCamState);
-        
-    }
-    cout << "Finished reading images...\n";
-
-    if(cameraStates.size() <= 2)
-    {
-        cout << "The SFM pipeline needs atleast 3 images to function!" << endl;
-        assert(cameraStates.size() > 2);
-    }
+    readImages(image_paths);
 
     //Populate match table with empty vectors
-    for(uint16_t i =0; i < cameraStates.size(); i++)
+    for(uint16_t i = 0; i < cameraStates.size(); i++)
     {
         for(uint16_t j = 0; j < cameraStates.size(); j++)
         {
@@ -454,6 +463,7 @@ int main(int argc, const char **argv)
 
 
         done_views.push_back(current_view);
+
     }
 
 
