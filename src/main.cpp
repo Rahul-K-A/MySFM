@@ -9,7 +9,7 @@ float dist(Point2f a, Point2f b)
 
 
 const float dThreshold = 1.f;
-const float ratio_thresh = 0.8f;
+const float ratio_thresh = 0.75f;
 const float acceptable_error = 20.f;
 
 Mat K = (Mat1d(3,3) <<      2759.48, 0, 1520.69, 
@@ -38,6 +38,114 @@ map<int, vector<vector<DMatch>> > match_table;
 vector<int> done_views;
 Ptr<SURF> surf;
 Ptr<DescriptorMatcher> matcher;
+cvsba::Sba BA; 
+cvsba::Sba::Params params ;
+
+
+
+void performBA(vector<DataPoint>& pc_to_add, int best_match_view, int current_view)
+{
+    if(!pc_to_add.size())
+    {
+        return;
+    }
+    vector<CamState> myCamState;
+    CamState s1, s2;
+    s1.Descriptor = cameraStates[best_match_view].Descriptor.clone();
+    s1.R = cameraStates[best_match_view].R.clone();
+    s1.t = cameraStates[best_match_view].t.clone();
+    s1.P = cameraStates[best_match_view].P.clone();
+    s1.keypoints = cameraStates[best_match_view].keypoints;
+
+    s2.Descriptor = cameraStates[current_view].Descriptor.clone();
+    s2.R = cameraStates[current_view].R.clone();
+    s2.t = cameraStates[current_view].t.clone();
+    s2.P = cameraStates[current_view].P.clone();
+    s2.keypoints = cameraStates[current_view].keypoints;
+    
+    myCamState.push_back(s1);
+    myCamState.push_back(s2);
+
+    std::vector<cv::Point3f> points;
+    std::vector<std::vector<cv::Point2f> > imagePoints;
+    std::vector<std::vector<int> > visibility_mask;
+    std::vector<cv::Mat> cameraMatrix = vector<Mat>(myCamState.size(), K);
+    std::vector<cv::Mat> R;
+    std::vector<cv::Mat> T;
+    std::vector<cv::Mat> distCoeffs = vector<Mat>(myCamState.size(), ( Mat1d(1,5) << 0,0,0,0,0 )  );
+
+    vector<int> views;
+    views.push_back(best_match_view);
+    views.push_back(current_view);
+    for(const DataPoint& cloud_point : pc_to_add)
+    {
+        points.push_back(cloud_point.point);
+    }
+    for(uint16_t i = 0; i < myCamState.size(); i++)
+    {
+        vector<Point2f> imgPoints;
+
+        vector<int> visibility;
+        for(uint16_t idx = 0 ; idx < pc_to_add.size(); idx++)
+        {
+            int view_idx = pc_to_add[idx].keypoint_index[views[i]];
+            imgPoints.push_back(myCamState[i].keypoints[view_idx].pt);
+
+            visibility.push_back(1);
+
+        }
+        imagePoints.push_back(imgPoints);
+
+        visibility_mask.push_back(visibility);
+        R.push_back(myCamState[i].R.clone());
+        T.push_back(myCamState[i].t.clone());
+
+    }
+    params.type = cvsba::Sba::MOTIONSTRUCTURE;
+    params.iterations = 150;
+    params.minError = 1e-7;
+    params.fixedIntrinsics = 5;
+    params.fixedDistortion = 5;
+    params.verbose = true;
+    BA.setParams(params);
+
+    cout << points.size() << endl;
+    cout << imagePoints.size() << endl;
+    cout << R.size() << endl;
+    cout << imagePoints[0].size() << endl;
+    cout << imagePoints[1].size() << endl;
+
+    BA.run( points, imagePoints, visibility_mask, cameraMatrix,  R, T, distCoeffs);
+    for(uint32_t idx = 0; idx < point_cloud.size(); idx++)
+    {
+        point_cloud[idx].point = points[idx];
+    }
+
+
+    for(uint16_t i = 0; i < myCamState.size(); i++)
+    {
+        Mat tempR, tempT, transform;
+        R[i].convertTo(myCamState[i].R, CV_32F);
+        T[i].convertTo(myCamState[i].t, CV_32F);
+        hconcat(R[i],T[i],transform);
+        Mat tempP = K * transform;
+        tempP.convertTo(myCamState[i].P, CV_32F);
+    }
+
+    cameraStates[best_match_view].R = myCamState[0].R.clone();
+    cameraStates[best_match_view].t = myCamState[0].t.clone();
+    cameraStates[best_match_view].P = myCamState[0].P.clone();
+
+    
+    cameraStates[current_view].R = myCamState[1].R.clone();
+    cameraStates[current_view].t = myCamState[1].t.clone();
+    cameraStates[current_view].P = myCamState[1].P.clone();
+
+
+    std::cout << "Optimization. Initial error=" << BA.getInitialReprjError() << " and Final error=" << BA.getFinalReprjError() << std::endl;
+}
+
+
 
 
 void readImages(set<fs::path>& image_paths)
@@ -101,13 +209,12 @@ void calculateImageFeatures()
                     good_matches.push_back(knn_matches[idx][0]);
                 }
             }
-
+            cout << "There are " << good_matches.size() << " good matches between images " << i <<" and " << j << endl;
             match_table[i][j] = good_matches;
         }
     }
 
     cout << "Finished calculating matches between images...\n";
-
 }
 
 void computeFirstPointCloud()
@@ -223,11 +330,11 @@ void computeFirstPointCloud()
     }
     average_reprojection_error = average_reprojection_error/triangulation_points2.size();
     cout << "Average reprojection error: " << average_reprojection_error << endl;
-    d = 0; 
-    average_reprojection_error = 0;
 
     done_views.push_back(0);
     done_views.push_back(1);
+
+    performBA(point_cloud, 0,1);
 
 }
 
@@ -315,39 +422,67 @@ void addToGlobalPC(int prevView, int currentView, vector<DataPoint>& pc_to_add)
     {
         int index_in_current_view = pc_to_add[idx].keypoint_index[currentView];
         int index_in_previous_view = pc_to_add[idx].keypoint_index[prevView];
+        bool found = false;
         for(uint16_t i = 0; i < done_views.size(); i++ )
         {
             int view_to_eval = done_views[i];
-            vector<DMatch> view1Match = match_table[view_to_eval][currentView];
-            for(uint16_t match = 0; match < view1Match.size(); match++)
+            vector<DMatch> view1Match1 = match_table[view_to_eval][currentView];
+            for(uint16_t match = 0; match < view1Match1.size(); match++)
             {
-                if(index_in_current_view == view1Match[match].trainIdx)
+                if(index_in_current_view == view1Match1[match].trainIdx)
                 {
-                    pc_to_add[idx].keypoint_index[view_to_eval] = view1Match[match].queryIdx;
+                    pc_to_add[idx].keypoint_index[view_to_eval] = view1Match1[match].queryIdx;
                     matches++;
+                    found = true;
                     break;
                 }
-            } 
+            }
 
-            if(view_to_eval == prevView)
+            vector<DMatch> view1Match2 = match_table[currentView][view_to_eval];
+            for(uint16_t match = 0; match < view1Match2.size(); match++)
+            {
+                if(index_in_current_view == view1Match2[match].queryIdx)
+                {
+                    pc_to_add[idx].keypoint_index[view_to_eval] = view1Match2[match].trainIdx;
+                    matches++;
+                    found = true;
+                    break;
+                }
+            }  
+
+            if(view_to_eval == prevView || found)
             {
                 continue;
             }
-            vector<DMatch> view2Match = match_table[view_to_eval][prevView];
-            for(uint16_t match = 0; match < view2Match.size(); match++)
+            vector<DMatch> view2Match1 = match_table[view_to_eval][prevView];
+            for(uint16_t match = 0; match < view2Match1.size(); match++)
             {
-                if(index_in_previous_view == view2Match[match].trainIdx)
+                if(index_in_previous_view == view2Match1[match].trainIdx)
                 {
                     if(pc_to_add[idx].keypoint_index[view_to_eval] != -1)
                     {
                         break;
                     }
-                    pc_to_add[idx].keypoint_index[view_to_eval] = view2Match[match].queryIdx;
+                    pc_to_add[idx].keypoint_index[view_to_eval] = view2Match1[match].queryIdx;
                     matches++;
                     break;
                 }
             } 
             
+            vector<DMatch> view2Match2 = match_table[prevView][view_to_eval];
+            for(uint16_t match = 0; match < view2Match2.size(); match++)
+            {
+                if(index_in_previous_view == view2Match2[match].queryIdx)
+                {
+                    if(pc_to_add[idx].keypoint_index[view_to_eval] != -1)
+                    {
+                        break;
+                    }
+                    pc_to_add[idx].keypoint_index[view_to_eval] = view2Match2[match].trainIdx;
+                    matches++;
+                    break;
+                }
+            } 
         }
         
 
@@ -356,6 +491,7 @@ void addToGlobalPC(int prevView, int currentView, vector<DataPoint>& pc_to_add)
     point_cloud.insert(point_cloud.end(),pc_to_add.begin(), pc_to_add.end());
     cout << pc_to_add.size() <<" points added to global point cloud! Current size is " << point_cloud.size() << endl;
 }
+
 
 int main(int argc, const char **argv)
 {
@@ -457,6 +593,8 @@ int main(int argc, const char **argv)
             }
         }
 
+        //performBA(pc_to_add, best_match_view, current_view);
+
         addToGlobalPC(best_match_view, current_view, pc_to_add);
 
         average_reprojection_error = average_reprojection_error/currpts.size();
@@ -466,6 +604,7 @@ int main(int argc, const char **argv)
 
 
         done_views.push_back(current_view);
+
 
     }
 
