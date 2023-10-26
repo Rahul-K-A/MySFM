@@ -9,7 +9,11 @@
 #include <sstream>
 #include <fstream>
 #include <vector>
-#include <experimental/filesystem>
+#ifdef USE_NEW_FILESYSTEM_HEADER
+    #include <filesystem>
+#else
+    #include <experimental/filesystem>
+#endif
 #include <set>
 #include <cmath>
 #include <pcl/point_cloud.h>
@@ -25,4 +29,8 @@
 using namespace std;
 using namespace cv;
 using namespace cv::xfeatures2d;
+#ifdef USE_NEW_FILESYSTEM_HEADER
+namespace fs = std::filesystem;
+#else
 namespace fs = std::experimental::filesystem;
+#endif
