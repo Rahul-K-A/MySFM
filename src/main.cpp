@@ -9,7 +9,7 @@ float dist(Point2f a, Point2f b)
 
 
 const float dThreshold = 1.f;
-const float ratio_thresh = 0.75f;
+const float ratio_thresh = 0.8f;
 const float acceptable_error = 20.f;
 
 Mat K = (Mat1d(3,3) <<      2759.48, 0, 1520.69, 
@@ -41,6 +41,80 @@ Ptr<DescriptorMatcher> matcher;
 cvsba::Sba BA; 
 cvsba::Sba::Params params ;
 
+
+
+void performBA()
+{
+    std::vector<cv::Point3f> points;
+    std::vector<std::vector<cv::Point2f> > imagePoints;
+    std::vector<std::vector<int> > visibility_mask;
+    std::vector<cv::Mat> cameraMatrix = vector<Mat>(done_views.size(), K);
+    std::vector<cv::Mat> R;
+    std::vector<cv::Mat> T;
+    std::vector<cv::Mat> distCoeffs = vector<Mat>(done_views.size(), ( Mat1d(1,5) << 0,0,0,0,0 )  );
+
+    for(const DataPoint& cloud_point : point_cloud)
+    {
+        points.push_back(cloud_point.point);
+    }
+    
+    for(int view : done_views)
+    {
+        vector<Point2f> current_view_points;
+        vector<int> current_visibility;
+        for(uint32_t idx = 0; idx < point_cloud.size(); idx++)
+        {
+            int kpidx = point_cloud[idx].keypoint_index[view];
+            if(kpidx != -1)
+            {
+                current_view_points.push_back(cameraStates[view].keypoints[kpidx].pt);
+                current_visibility.push_back(1);
+            }
+            else{
+                current_view_points.push_back(Point2f(0,0));
+                current_visibility.push_back(0);
+            }
+        }
+
+        imagePoints.push_back(current_view_points);
+        visibility_mask.push_back(current_visibility);
+        R.push_back(cameraStates[view].R.clone());
+        T.push_back(cameraStates[view].t.clone());
+    }
+
+    params.type = cvsba::Sba::MOTIONSTRUCTURE;
+    params.iterations = 500;
+    params.minError = 1e-7;
+    params.fixedIntrinsics = 5;
+    params.fixedDistortion = 5;
+    params.verbose = true;
+    BA.setParams(params);
+
+    cout << points.size() << endl;
+    cout <<  "imagePoints :"<< imagePoints.size() << endl;
+    cout << "R :"<< R.size() << endl;
+    cout <<  "T :"<< T.size() << endl;
+
+    BA.run( points, imagePoints, visibility_mask, cameraMatrix,  R, T, distCoeffs);
+    for(uint32_t idx = 0; idx < point_cloud.size(); idx++)
+    {
+        point_cloud[idx].point = points[idx];
+    }
+
+
+    for(uint16_t i = 0; i < done_views.size(); i++)
+    {
+        int curr_idx = done_views[i];
+        cameraStates[curr_idx].R = R[i].clone();
+        cameraStates[curr_idx].t = T[i].clone();
+        Mat transform;
+        hconcat(R[i], T[i], transform);
+        cameraStates[curr_idx].P = K * transform;
+
+    }
+
+    std::cout << "Optimization. Initial error=" << BA.getInitialReprjError() << " and Final error=" << BA.getFinalReprjError() << std::endl;
+}
 
 
 void performBA(vector<DataPoint>& pc_to_add, int best_match_view, int current_view)
@@ -361,7 +435,7 @@ int find_best_correspondance(int view_to_eval)
                 {
                     //2d point in image <working_view>
                     point_cloud_status[pc_idx] = 1;
-                    point_cloud[pc_idx].keypoint_index[view_to_eval] = good_matches[match].trainIdx;
+                    //point_cloud[pc_idx].keypoint_index[view_to_eval] = good_matches[match].trainIdx;
                     correspondances++;
                     break;
                 }
@@ -416,7 +490,7 @@ void find_2d_3d_matches(int view1, int view2, vector<Point2f>& imagePoints, vect
 
 void addToGlobalPC(int prevView, int currentView, vector<DataPoint>& pc_to_add)
 {
-    int matches = 0;
+int matches = 0;
     cout << "Appending PC of size " << pc_to_add.size() << endl;
     for(uint16_t idx = 0; idx < pc_to_add.size(); idx++)
     {
@@ -593,7 +667,7 @@ int main(int argc, const char **argv)
             }
         }
 
-        //performBA(pc_to_add, best_match_view, current_view);
+        performBA(pc_to_add, best_match_view, current_view);
 
         addToGlobalPC(best_match_view, current_view, pc_to_add);
 
@@ -604,8 +678,7 @@ int main(int argc, const char **argv)
 
 
         done_views.push_back(current_view);
-
-
+            
     }
 
 
