@@ -41,7 +41,18 @@ Ptr<DescriptorMatcher> matcher;
 cvsba::Sba BA; 
 cvsba::Sba::Params params ;
 
-
+vector<DMatch> flip_match(const vector<DMatch>& matches_vector)
+{
+    vector<DMatch> flipped_vector;
+    for(const DMatch& match : matches_vector)
+    {
+        DMatch current_match = match;
+        std::swap(current_match.queryIdx, current_match.trainIdx);
+        flipped_vector.push_back(current_match);
+        flipped_vector.push_back(current_match);
+    }
+    return flipped_vector;
+}
 
 void performBA()
 {
@@ -64,7 +75,7 @@ void performBA()
         vector<int> current_visibility;
         for(uint32_t idx = 0; idx < point_cloud.size(); idx++)
         {
-            int kpidx = point_cloud[idx].keypoint_index[view];
+                        int kpidx = point_cloud[idx].keypoint_index[view];
             if(kpidx != -1)
             {
                 current_view_points.push_back(cameraStates[view].keypoints[kpidx].pt);
@@ -75,7 +86,7 @@ void performBA()
                 current_visibility.push_back(0);
             }
         }
-
+        
         imagePoints.push_back(current_view_points);
         visibility_mask.push_back(current_visibility);
         R.push_back(cameraStates[view].R.clone());
@@ -105,11 +116,12 @@ void performBA()
     for(uint16_t i = 0; i < done_views.size(); i++)
     {
         int curr_idx = done_views[i];
-        cameraStates[curr_idx].R = R[i].clone();
-        cameraStates[curr_idx].t = T[i].clone();
+        R[i].convertTo(cameraStates[curr_idx].R, CV_32F);
+        T[i].convertTo(cameraStates[curr_idx].t, CV_32F);
         Mat transform;
         hconcat(R[i], T[i], transform);
         cameraStates[curr_idx].P = K * transform;
+        cameraStates[curr_idx].P.convertTo(cameraStates[curr_idx].P, CV_32F);
 
     }
 
@@ -270,7 +282,7 @@ void calculateImageFeatures()
         for(uint16_t j = 0; j < cameraStates.size(); j++)
         {
             //If correspondance to itself or if it has already been calc, disregard
-            if ( i == j ) continue;
+            if ( i == j || match_table[i][j].size()) continue;
             Mat desc1 = cameraStates[i].Descriptor;
             Mat desc2 = cameraStates[j].Descriptor;
             vector<vector<DMatch>> knn_matches;
@@ -285,6 +297,7 @@ void calculateImageFeatures()
             }
             cout << "There are " << good_matches.size() << " good matches between images " << i <<" and " << j << endl;
             match_table[i][j] = good_matches;
+            match_table[j][i] = flip_match(good_matches);
         }
     }
 
@@ -423,7 +436,7 @@ int find_best_correspondance(int view_to_eval)
         int done_view_idx = done_views[i];
         int correspondances = 0;
         vector<DMatch> good_matches = match_table[done_view_idx][view_to_eval];
-                for (unsigned int match  = 0; match < good_matches.size(); match++) 
+        for (unsigned int match  = 0; match < good_matches.size(); match++) 
         {
             // the index of the matching 2D point in <old_view>
             int idx_in_old_view = good_matches[match].queryIdx;
@@ -490,7 +503,7 @@ void find_2d_3d_matches(int view1, int view2, vector<Point2f>& imagePoints, vect
 
 void addToGlobalPC(int prevView, int currentView, vector<DataPoint>& pc_to_add)
 {
-int matches = 0;
+    int matches = 0;
     cout << "Appending PC of size " << pc_to_add.size() << endl;
     for(uint16_t idx = 0; idx < pc_to_add.size(); idx++)
     {
@@ -512,56 +525,10 @@ int matches = 0;
                 }
             }
 
-            vector<DMatch> view1Match2 = match_table[currentView][view_to_eval];
-            for(uint16_t match = 0; match < view1Match2.size(); match++)
-            {
-                if(index_in_current_view == view1Match2[match].queryIdx)
-                {
-                    pc_to_add[idx].keypoint_index[view_to_eval] = view1Match2[match].trainIdx;
-                    matches++;
-                    found = true;
-                    break;
-                }
-            }  
-
-            if(view_to_eval == prevView || found)
-            {
-                continue;
-            }
-            vector<DMatch> view2Match1 = match_table[view_to_eval][prevView];
-            for(uint16_t match = 0; match < view2Match1.size(); match++)
-            {
-                if(index_in_previous_view == view2Match1[match].trainIdx)
-                {
-                    if(pc_to_add[idx].keypoint_index[view_to_eval] != -1)
-                    {
-                        break;
-                    }
-                    pc_to_add[idx].keypoint_index[view_to_eval] = view2Match1[match].queryIdx;
-                    matches++;
-                    break;
-                }
-            } 
-            
-            vector<DMatch> view2Match2 = match_table[prevView][view_to_eval];
-            for(uint16_t match = 0; match < view2Match2.size(); match++)
-            {
-                if(index_in_previous_view == view2Match2[match].queryIdx)
-                {
-                    if(pc_to_add[idx].keypoint_index[view_to_eval] != -1)
-                    {
-                        break;
-                    }
-                    pc_to_add[idx].keypoint_index[view_to_eval] = view2Match2[match].trainIdx;
-                    matches++;
-                    break;
-                }
-            } 
         }
         
 
     }
-    cout<<"Matches : " << matches << endl;
     point_cloud.insert(point_cloud.end(),pc_to_add.begin(), pc_to_add.end());
     cout << pc_to_add.size() <<" points added to global point cloud! Current size is " << point_cloud.size() << endl;
 }
@@ -667,7 +634,6 @@ int main(int argc, const char **argv)
             }
         }
 
-        performBA(pc_to_add, best_match_view, current_view);
 
         addToGlobalPC(best_match_view, current_view, pc_to_add);
 
@@ -678,7 +644,8 @@ int main(int argc, const char **argv)
 
 
         done_views.push_back(current_view);
-            
+        performBA();
+
     }
 
 
