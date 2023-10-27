@@ -9,6 +9,7 @@ float dist(Point2f a, Point2f b)
 
 
 const float dThreshold = 1.f;
+/*Ratio thresh needs to be kept around 0.5 to produce good BA values*/
 const float ratio_thresh = 0.8f;
 const float acceptable_error = 20.f;
 
