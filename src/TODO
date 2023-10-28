@@ -1,3 +1,4 @@
-Fix high reprojection error for final images
 Make code more readable
 Merge find_best_correspondance and find_2d_3d_matches
+Add cvsba to the repo
+Add JSON or YAML parser for parameter tuning

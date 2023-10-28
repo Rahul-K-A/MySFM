@@ -1,12 +1,10 @@
 # MySFM
 This project was created with the aim of implementing a Structure-From-Motion (SFM) pipeline and to test it using estabalished datasets.
 
-## Setup instructions:
+# Dependencies
+This project requires OpenCV 4 and CVSBA. The version of cvsba used is adapted from [willdzeng's cvsba repository.](https://github.com/willdzeng/cvsba)
 
-`sudo apt install libopencv-dev` in Ubuntu 20.04 or newer
-
-`sudo apt install libeigen3-dev` in Ubuntu 20.04 or newer
-
+OpenCV 4 can be found in the OpenCV website. When installing OpenCV 4 from source, follow [this tutorial here](https://docs.opencv.org/4.x/db/d05/tutorial_config_reference.html) to build it with the contrib submodule and with non-free features enabled.
 
 
 
