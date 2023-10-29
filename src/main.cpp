@@ -1,11 +1,7 @@
 #include "common-includes.h"
+#include "cv_helpers.h"
+#include "pcl_helpers.h"
 
-float dist(Point2f a, Point2f b)
-{
-   float dist =  (a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y);
-   dist = sqrtf(dist);
-   return dist;
-}
 
 
 const float dThreshold = 1.f;
@@ -17,24 +13,9 @@ Mat K = (Mat1d(3,3) <<      2759.48, 0, 1520.69,
                             0, 2764.16, 1006.81, 
                             0, 0, 1); 
 
-struct DataPoint {
-    Point3f point;
-    vector<int> keypoint_index;
-    Vec3b color;
-};
-
-
-struct CamState{
-    Mat Image;
-    Mat Descriptor;
-    vector<KeyPoint> keypoints;
-    Mat R;
-    Mat t;
-    Mat P;
-};
 
 vector<DataPoint> point_cloud; //our global 3D point cloud
-vector<CamState> cameraStates;
+vector<CameraState> cameraStates;
 map<int, vector<vector<DMatch>> > match_table;
 vector<int> done_views;
 Ptr<SURF> surf;
@@ -136,8 +117,8 @@ void performBA(vector<DataPoint>& pc_to_add, int best_match_view, int current_vi
     {
         return;
     }
-    vector<CamState> myCamState;
-    CamState s1, s2;
+    vector<CameraState> myCameraState;
+    CameraState s1, s2;
     s1.Descriptor = cameraStates[best_match_view].Descriptor.clone();
     s1.R = cameraStates[best_match_view].R.clone();
     s1.t = cameraStates[best_match_view].t.clone();
@@ -150,16 +131,16 @@ void performBA(vector<DataPoint>& pc_to_add, int best_match_view, int current_vi
     s2.P = cameraStates[current_view].P.clone();
     s2.keypoints = cameraStates[current_view].keypoints;
     
-    myCamState.push_back(s1);
-    myCamState.push_back(s2);
+    myCameraState.push_back(s1);
+    myCameraState.push_back(s2);
 
     std::vector<cv::Point3f> points;
     std::vector<std::vector<cv::Point2f> > imagePoints;
     std::vector<std::vector<int> > visibility_mask;
-    std::vector<cv::Mat> cameraMatrix = vector<Mat>(myCamState.size(), K);
+    std::vector<cv::Mat> cameraMatrix = vector<Mat>(myCameraState.size(), K);
     std::vector<cv::Mat> R;
     std::vector<cv::Mat> T;
-    std::vector<cv::Mat> distCoeffs = vector<Mat>(myCamState.size(), ( Mat1d(1,5) << 0,0,0,0,0 )  );
+    std::vector<cv::Mat> distCoeffs = vector<Mat>(myCameraState.size(), ( Mat1d(1,5) << 0,0,0,0,0 )  );
 
     vector<int> views;
     views.push_back(best_match_view);
@@ -168,7 +149,7 @@ void performBA(vector<DataPoint>& pc_to_add, int best_match_view, int current_vi
     {
         points.push_back(cloud_point.point);
     }
-    for(uint16_t i = 0; i < myCamState.size(); i++)
+    for(uint16_t i = 0; i < myCameraState.size(); i++)
     {
         vector<Point2f> imgPoints;
 
@@ -176,7 +157,7 @@ void performBA(vector<DataPoint>& pc_to_add, int best_match_view, int current_vi
         for(uint16_t idx = 0 ; idx < pc_to_add.size(); idx++)
         {
             int view_idx = pc_to_add[idx].keypoint_index[views[i]];
-            imgPoints.push_back(myCamState[i].keypoints[view_idx].pt);
+            imgPoints.push_back(myCameraState[i].keypoints[view_idx].pt);
 
             visibility.push_back(1);
 
@@ -184,8 +165,8 @@ void performBA(vector<DataPoint>& pc_to_add, int best_match_view, int current_vi
         imagePoints.push_back(imgPoints);
 
         visibility_mask.push_back(visibility);
-        R.push_back(myCamState[i].R.clone());
-        T.push_back(myCamState[i].t.clone());
+        R.push_back(myCameraState[i].R.clone());
+        T.push_back(myCameraState[i].t.clone());
 
     }
     params.type = cvsba::Sba::MOTIONSTRUCTURE;
@@ -209,24 +190,24 @@ void performBA(vector<DataPoint>& pc_to_add, int best_match_view, int current_vi
     }
 
 
-    for(uint16_t i = 0; i < myCamState.size(); i++)
+    for(uint16_t i = 0; i < myCameraState.size(); i++)
     {
         Mat tempR, tempT, transform;
-        R[i].convertTo(myCamState[i].R, CV_32F);
-        T[i].convertTo(myCamState[i].t, CV_32F);
+        R[i].convertTo(myCameraState[i].R, CV_32F);
+        T[i].convertTo(myCameraState[i].t, CV_32F);
         hconcat(R[i],T[i],transform);
         Mat tempP = K * transform;
-        tempP.convertTo(myCamState[i].P, CV_32F);
+        tempP.convertTo(myCameraState[i].P, CV_32F);
     }
 
-    cameraStates[best_match_view].R = myCamState[0].R.clone();
-    cameraStates[best_match_view].t = myCamState[0].t.clone();
-    cameraStates[best_match_view].P = myCamState[0].P.clone();
+    cameraStates[best_match_view].R = myCameraState[0].R.clone();
+    cameraStates[best_match_view].t = myCameraState[0].t.clone();
+    cameraStates[best_match_view].P = myCameraState[0].P.clone();
 
     
-    cameraStates[current_view].R = myCamState[1].R.clone();
-    cameraStates[current_view].t = myCamState[1].t.clone();
-    cameraStates[current_view].P = myCamState[1].P.clone();
+    cameraStates[current_view].R = myCameraState[1].R.clone();
+    cameraStates[current_view].t = myCameraState[1].t.clone();
+    cameraStates[current_view].P = myCameraState[1].P.clone();
 
 
     std::cout << "Optimization. Initial error=" << BA.getInitialReprjError() << " and Final error=" << BA.getFinalReprjError() << std::endl;
@@ -245,14 +226,14 @@ void readImages(set<fs::path>& image_paths)
         Mat img = imread(image_path.c_str(), IMREAD_COLOR);
         vector<KeyPoint> keypoint;
         Mat descriptor;
-        CamState currCamState;
-        img.copyTo(currCamState.Image);
+        CameraState currCameraState;
+        img.copyTo(currCameraState.Image);
         Mat img_gray;
         cvtColor(img, img_gray, COLOR_BGR2GRAY);
         surf->detectAndCompute(img_gray, noArray(), keypoint, descriptor);
-        currCamState.keypoints = keypoint;
-        descriptor.copyTo(currCamState.Descriptor);
-        cameraStates.push_back(currCamState);
+        currCameraState.keypoints = keypoint;
+        descriptor.copyTo(currCameraState.Descriptor);
+        cameraStates.push_back(currCameraState);
         
     }
     cout << "Finished reading " << cameraStates.size() <<" images...\n";
