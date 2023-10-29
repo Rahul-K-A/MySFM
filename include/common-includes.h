@@ -1,7 +1,6 @@
 #pragma once
 #include  <iostream>
 #include <string>
-#include <eigen3/Eigen/Core>
 #include <sstream>
 #include <fstream>
 #include <vector>
@@ -16,8 +15,6 @@
 #include <cvsba/cvsba.h>
 
 using namespace std;
-using namespace cv;
-using namespace cv::xfeatures2d;
 #ifdef USE_NEW_FILESYSTEM_HEADER
 namespace fs = std::filesystem;
 #else
