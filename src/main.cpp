@@ -32,8 +32,8 @@ int main(int argc, const char **argv)
         image_paths.insert(entry.path());
     }
     
-    readImages(image_paths);
     initFeatureMatching();
+    readImages(image_paths);
     calculateFeatureCorrespondance();
     computeFirstPointCloud();
     sfm();
