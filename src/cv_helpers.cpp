@@ -12,7 +12,7 @@ static Ptr<SURF> surf;
 static Ptr<DescriptorMatcher> matcher;
 const float dThreshold = 1.f;
 /*Ratio thresh needs to be kept around 0.5 to produce good BA values*/
-const float ratio_thresh = 0.6f;
+const float ratio_thresh = 0.4f;
 const float acceptable_error = 15.f;
 
 static Mat K = (Mat1d(3,3) <<      2759.48, 0, 1520.69, 
@@ -110,9 +110,9 @@ int find_best_correspondence(int view_to_eval)
 {
     int max_correspondances = -1;
     int best_match_view = -1;
-    vector<int> point_cloud_status(point_cloud.size(),0);
     for(uint16_t i = 0; i < done_views.size(); i++ )
     {
+        vector<int> point_cloud_status(point_cloud.size(),0);
         int done_view_idx = done_views[i];
         int correspondances = 0;
         vector<DMatch> good_matches = match_table[done_view_idx][view_to_eval];
@@ -204,6 +204,7 @@ void addToGlobalPC(int prevView, int currentView, vector<DataPoint>& pc_to_add)
     {
         int index_in_current_view = pc_to_add[idx].keypoint_index[currentView];
         int index_in_previous_view = pc_to_add[idx].keypoint_index[prevView];
+        assert(index_in_current_view != -1 && index_in_previous_view !=-1);
         bool found = false;
         for(uint16_t i = 0; i < done_views.size(); i++ )
         {
@@ -213,9 +214,11 @@ void addToGlobalPC(int prevView, int currentView, vector<DataPoint>& pc_to_add)
             {
                 if(index_in_current_view == view1Match1[match].trainIdx)
                 {
-                    pc_to_add[idx].keypoint_index[view_to_eval] = view1Match1[match].queryIdx;
-                    matches++;
-                    found = true;
+                    if(pc_to_add[idx].keypoint_index[view_to_eval] == -1)
+                    {
+                        pc_to_add[idx].keypoint_index[view_to_eval] = view1Match1[match].queryIdx;
+                        matches++;
+                    }
                     break;
                 }
             }
@@ -230,7 +233,7 @@ void addToGlobalPC(int prevView, int currentView, vector<DataPoint>& pc_to_add)
             {
                 if(index_in_previous_view == view1Match1[match].trainIdx)
                 {
-                    if(pc_to_add[idx].keypoint_index[view_to_eval] != -1)
+                    if(pc_to_add[idx].keypoint_index[view_to_eval] == -1)
                     {
                         pc_to_add[idx].keypoint_index[view_to_eval] = view1Match1[match].queryIdx;
                         matches++;
@@ -370,6 +373,7 @@ void computeFirstPointCloud()
     done_views.push_back(0);
     done_views.push_back(1);
 
+    performBA();
     //performBA(point_cloud, 0,1);
 }
 
@@ -449,7 +453,7 @@ void sfm()
                 pc_to_add.push_back(data_point);
             }
         }
-
+        
 
         addToGlobalPC(best_match_view, current_view, pc_to_add);
 
@@ -457,9 +461,10 @@ void sfm()
         cout<<"Average RE: " << average_reprojection_error << endl;
         cout<<endl<<endl;
 
-
-
-        done_views.push_back(current_view);
+        if(pc_to_add.size())
+        {
+            done_views.push_back(current_view);
+        }
         performBA();
 
     }
