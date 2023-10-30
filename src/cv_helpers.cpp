@@ -13,7 +13,7 @@ static Ptr<DescriptorMatcher> matcher;
 const float dThreshold = 1.f;
 /*Ratio thresh needs to be kept around 0.5 to produce good BA values*/
 const float ratio_thresh = 0.6f;
-const float acceptable_error = 200.f;
+const float acceptable_error = 15.f;
 
 static Mat K = (Mat1d(3,3) <<      2759.48, 0, 1520.69, 
                             0, 2764.16, 1006.81, 
