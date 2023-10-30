@@ -12,7 +12,7 @@ static Ptr<SURF> surf;
 static Ptr<DescriptorMatcher> matcher;
 const float dThreshold = 1.f;
 /*Ratio thresh needs to be kept around 0.5 to produce good BA values*/
-const float ratio_thresh = 0.4f;
+const float ratio_thresh = 0.5f;
 const float acceptable_error = 15.f;
 
 static Mat K = (Mat1d(3,3) <<      2759.48, 0, 1520.69, 
@@ -398,6 +398,10 @@ void sfm()
         find_2d_3d_matches(best_match_view, current_view, imgPoints, ppoint_cloud, kp1, kp2, kpidx1, kpidx2);
         Mat t,rvec,R;
         assert(ppoint_cloud.size() == imgPoints.size());
+        if(imgPoints.size() < 4)
+        {
+            continue;
+        }
         solvePnPRansac(ppoint_cloud, imgPoints, K, noArray(), rvec, t, false);
         //get rotation in 3x3 matrix form
         Rodrigues(rvec, R);
