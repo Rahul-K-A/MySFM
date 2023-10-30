@@ -12,8 +12,8 @@ static Ptr<SURF> surf;
 static Ptr<DescriptorMatcher> matcher;
 const float dThreshold = 1.f;
 /*Ratio thresh needs to be kept around 0.5 to produce good BA values*/
-const float ratio_thresh = 0.8f;
-const float acceptable_error = 20.f;
+const float ratio_thresh = 0.6f;
+const float acceptable_error = 200.f;
 
 static Mat K = (Mat1d(3,3) <<      2759.48, 0, 1520.69, 
                             0, 2764.16, 1006.81, 
@@ -47,10 +47,9 @@ void readImages(set<fs::path>& image_paths)
         cout << "Reading image: " << image_path.c_str() << endl;
         Mat img = imread(image_path.c_str(), IMREAD_COLOR);
         vector<KeyPoint> keypoint;
-        Mat descriptor;
         CameraState currCameraState;
         img.copyTo(currCameraState.Image);
-        Mat img_gray;
+        Mat img_gray, descriptor;
         cvtColor(img, img_gray, COLOR_BGR2GRAY);
         surf->detectAndCompute(img_gray, noArray(), keypoint, descriptor);
         currCameraState.keypoints = keypoint;
@@ -217,6 +216,26 @@ void addToGlobalPC(int prevView, int currentView, vector<DataPoint>& pc_to_add)
                     pc_to_add[idx].keypoint_index[view_to_eval] = view1Match1[match].queryIdx;
                     matches++;
                     found = true;
+                    break;
+                }
+            }
+        }
+
+        /* Also fill in old view correspondences*/
+        for(uint16_t i = 0; i < done_views.size(); i++ )
+        {
+            int view_to_eval = done_views[i];
+            vector<DMatch> view1Match1 = match_table[view_to_eval][prevView];
+            for(uint16_t match = 0; match < view1Match1.size(); match++)
+            {
+                if(index_in_previous_view == view1Match1[match].trainIdx)
+                {
+                    if(pc_to_add[idx].keypoint_index[view_to_eval] != -1)
+                    {
+                        pc_to_add[idx].keypoint_index[view_to_eval] = view1Match1[match].queryIdx;
+                        matches++;
+                    }
+
                     break;
                 }
             }
@@ -449,6 +468,7 @@ void sfm()
 
 void performBA()
 {
+    cout <<"\n\nStarting BA!\n";
     std::vector<cv::Point3f> points;
     std::vector<std::vector<cv::Point2f> > imagePoints;
     std::vector<std::vector<int> > visibility_mask;
@@ -494,10 +514,10 @@ void performBA()
     params.verbose = true;
     BA.setParams(params);
 
-    cout << points.size() << endl;
-    cout <<  "imagePoints :"<< imagePoints.size() << endl;
-    cout << "R :"<< R.size() << endl;
-    cout <<  "T :"<< T.size() << endl;
+    // cout << points.size() << endl;
+    // cout <<  "imagePoints :"<< imagePoints.size() << endl;
+    // cout << "R :"<< R.size() << endl;
+    // cout <<  "T :"<< T.size() << endl;
 
     BA.run( points, imagePoints, visibility_mask, cameraMatrix,  R, T, distCoeffs);
     for(uint32_t idx = 0; idx < point_cloud.size(); idx++)
@@ -518,5 +538,5 @@ void performBA()
 
     }
 
-    std::cout << "Optimization. Initial error=" << BA.getInitialReprjError() << " and Final error=" << BA.getFinalReprjError() << std::endl;
+    std::cout << "Optimization. Initial error=" << BA.getInitialReprjError() << " and Final error=" << BA.getFinalReprjError() << endl << endl << endl;
 };
