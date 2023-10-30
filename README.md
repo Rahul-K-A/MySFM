@@ -10,3 +10,7 @@ OpenCV 4 can be found in the OpenCV website. When installing OpenCV 4 from sourc
 
 # Notes on CVSBA
 CVSBA seems very sensitive to incorrect feature correspondences. While setting the error threshold for the KNN matcher start with low threshold and slowly increase from there. It's all about finding a balance between having enough points for performing PnP pose calculation while still maintaining good correspondence.
+
+# References
+1. Mastering OpenCV with Practical Computer Vision Projects -  Daniel Lélis Baggio
+2. [Basic Knowledge on Visual SLAM: From Theory to Practice, by Xiang Gao, Tao Zhang, Qinrui Yan and Yi Liu ](https://github.com/gaoxiang12/slambook-en)
