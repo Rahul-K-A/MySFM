@@ -31,7 +31,7 @@ int main(int argc, const char **argv)
     {
         image_paths.insert(entry.path());
     }
-    
+
     initFeatureMatching();
     readImages(image_paths);
     calculateFeatureCorrespondance();
@@ -63,6 +63,10 @@ int main(int argc, const char **argv)
     //Since the point cloud is sparse, remove all the NaN values automatically set by PCL
     vector<int> indices;
     point_cloud_ptr->is_dense = false;
-
-    pcl::io::savePCDFileASCII("final.pcd", *point_cloud_ptr);
+    pcl::StatisticalOutlierRemoval<pcl::PointXYZRGB> sor;
+    sor.setInputCloud (point_cloud_ptr);
+    sor.setMeanK (50);
+    sor.setStddevMulThresh (1.0);
+    sor.filter (*point_cloud_ptr_filtered);
+    pcl::io::savePCDFileASCII("final.pcd", *point_cloud_ptr_filtered);
 }

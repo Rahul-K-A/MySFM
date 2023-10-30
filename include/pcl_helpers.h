@@ -6,3 +6,4 @@
 #include <pcl/registration/icp.h>
 #include <pcl/filters/filter.h>
 #include <pcl/io/pcd_io.h>
+#include <pcl/filters/statistical_outlier_removal.h>
