@@ -1,7 +1,7 @@
 # MySFM
 This project was created with the aim of implementing a Structure-From-Motion (SFM) pipeline and to test it using estabalished datasets.
 
-[Output](images/Fountain-SFM-Output.png)
+![Output](images/Fountain-SFM-Output.png "MySFM output")
 
 # Dependencies
 This project requires OpenCV 4 and CVSBA. The version of cvsba used is adapted from [willdzeng's cvsba repository.](https://github.com/willdzeng/cvsba)
