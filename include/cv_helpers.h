@@ -66,8 +66,10 @@ void addToGlobalPC(int prevView, int currentView, vector<DataPoint>& pc_to_add);
 /// @brief Computes the initial point cloud
 void computeFirstPointCloud();
 
+/// @brief Initialises SURF and feature matching
 void initFeatureMatching();
 
+/// @brief Perform Structure-from-Motion
 void sfm();
 
 
