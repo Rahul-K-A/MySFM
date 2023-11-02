@@ -34,12 +34,12 @@ float eDistance(cv::Point2f a, cv::Point2f b)
    return dist;
 };
 
-vector<DataPoint>& getGlobalPC()
+vector<DataPoint>& cvHelpers::getGlobalPC()
 {
     return point_cloud;
 }
 
-void readImages(set<fs::path>& image_paths)
+void cvHelpers::readImages(set<fs::path>& image_paths)
 {
     initFeatureMatching();
     cout << "Reading images...\n";
@@ -68,7 +68,7 @@ void readImages(set<fs::path>& image_paths)
 }
 
 
-void calculateFeatureCorrespondance()
+void cvHelpers::calculateFeatureCorrespondance()
 {
     //Populate match table with empty vectors
     for(uint16_t i = 0; i < cameraStates.size(); i++)
@@ -107,7 +107,7 @@ void calculateFeatureCorrespondance()
     cout << "Finished calculating matches between images...\n";
 }
 
-int find_best_correspondence(int view_to_eval)
+int cvHelpers::find_best_correspondence(int view_to_eval)
 {
     int max_correspondances = -1;
     int best_match_view = -1;
@@ -146,7 +146,7 @@ int find_best_correspondence(int view_to_eval)
 }
 
 
-vector<DMatch> flip_match(const vector<DMatch>& matches_vector)
+vector<DMatch> cvHelpers::flip_match(const vector<DMatch>& matches_vector)
 {
     vector<DMatch> flipped_vector;
     for(const DMatch& match : matches_vector)
@@ -159,7 +159,7 @@ vector<DMatch> flip_match(const vector<DMatch>& matches_vector)
     return flipped_vector;
 }
 
-void find_2d_3d_matches(int view1, int view2, vector<Point2f>& imagePoints, vector<Point3f>& ppoint_cloud, vector<KeyPoint>& kp1, vector<KeyPoint>& kp2, vector<int>& kpidx1, vector<int>& kpidx2)
+void cvHelpers::find_2d_3d_matches(int view1, int view2, vector<Point2f>& imagePoints, vector<Point3f>& ppoint_cloud, vector<KeyPoint>& kp1, vector<KeyPoint>& kp2, vector<int>& kpidx1, vector<int>& kpidx2)
 {
     ppoint_cloud.clear();
     kp1.clear();
@@ -197,7 +197,7 @@ void find_2d_3d_matches(int view1, int view2, vector<Point2f>& imagePoints, vect
 /// @param prevView View 1 which was used to triangulate the points
 /// @param currentView View 2 used for triangulation
 /// @param pc_to_add Point cloud to be added 
-void addToGlobalPC(int prevView, int currentView, vector<DataPoint>& pc_to_add)
+void cvHelpers::addToGlobalPC(int prevView, int currentView, vector<DataPoint>& pc_to_add)
 {
     int matches = 0;
     cout << "Appending PC of size " << pc_to_add.size() << endl;
@@ -257,7 +257,7 @@ void addToGlobalPC(int prevView, int currentView, vector<DataPoint>& pc_to_add)
 
 
 
-void computeFirstPointCloud()
+void cvHelpers::computeFirstPointCloud()
 {
     cout <<"Evaluating images 0 and 1 \n";
     vector<Point2f> p2d1, p2d2;
@@ -378,14 +378,14 @@ void computeFirstPointCloud()
     //performBA(point_cloud, 0,1);
 }
 
-void initFeatureMatching()
+void cvHelpers::initFeatureMatching()
 {
     surf = SURF::create();
     matcher = DescriptorMatcher::create(DescriptorMatcher::FLANNBASED);
 }
 
 
-void sfm()
+void cvHelpers::sfm()
 {
     calculateFeatureCorrespondance();
     computeFirstPointCloud();
@@ -478,7 +478,7 @@ void sfm()
 }
 
 
-void performBA()
+void cvHelpers::performBA()
 {
     cout <<"\n\nStarting BA!\n";
     std::vector<cv::Point3f> points;

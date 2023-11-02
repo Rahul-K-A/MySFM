@@ -28,6 +28,7 @@ struct CameraState{
 
 
 
+namespace cvHelpers{
 
 /// @brief Reads a set of images and calculates the keypoints and descriptors using surf
 /// @param image_paths Set of image paths  
@@ -72,9 +73,11 @@ void initFeatureMatching();
 /// @brief Perform Structure-from-Motion
 void sfm();
 
-
+/// @brief Get the current global point cloud data
+/// @return Datapoint vector containing the global PC
 vector<DataPoint>& getGlobalPC(); 
 
-
+/// @brief Perform bundle adjustment to get more accurate results
 void performBA();
 
+}

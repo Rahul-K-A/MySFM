@@ -9,4 +9,6 @@
 #include <pcl/filters/statistical_outlier_removal.h>
 #include "cv_helpers.h"
 
+namespace pclHelpers{
 void savePointCloud_to_PCD(vector<DataPoint>& point_cloud);
+}

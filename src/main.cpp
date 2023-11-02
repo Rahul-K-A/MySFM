@@ -29,11 +29,11 @@ int main(int argc, const char **argv)
         image_paths.insert(entry.path());
     }
 
-    readImages(image_paths);
-    sfm();
+    cvHelpers::readImages(image_paths);
+    cvHelpers::sfm();
 
-    vector<DataPoint>& point_cloud = getGlobalPC(); 
+    vector<DataPoint>& point_cloud = cvHelpers::getGlobalPC(); 
 
-    savePointCloud_to_PCD(point_cloud);
-
+    pclHelpers::savePointCloud_to_PCD(point_cloud);
+    
 }

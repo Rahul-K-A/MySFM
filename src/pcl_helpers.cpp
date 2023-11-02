@@ -2,7 +2,7 @@
 
 using namespace pcl;
 
-void savePointCloud_to_PCD(vector<DataPoint>& point_cloud)
+void pclHelpers::savePointCloud_to_PCD(vector<DataPoint>& point_cloud)
 {
     cout << "Creating PCL Point Cloud...\n";
     //Convert Point3D into PointXYZRGB
