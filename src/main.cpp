@@ -2,9 +2,6 @@
 #include "pcl_helpers.h"
 
 
-
-
-
 int main(int argc, const char **argv)
 {
     if(CV_VERSION_MAJOR < 4)
@@ -32,41 +29,11 @@ int main(int argc, const char **argv)
         image_paths.insert(entry.path());
     }
 
-    initFeatureMatching();
     readImages(image_paths);
-    calculateFeatureCorrespondance();
-    computeFirstPointCloud();
     sfm();
 
     vector<DataPoint>& point_cloud = getGlobalPC(); 
 
-    cout << "Creating PCL Point Cloud...\n";
-    //Convert Point3D into PointXYZRGB
-    pcl::PointCloud<pcl::PointXYZRGB>::Ptr point_cloud_ptr(new pcl::PointCloud<pcl::PointXYZRGB>);
-    pcl::PointCloud<pcl::PointXYZRGB>::Ptr point_cloud_ptr_filtered(new pcl::PointCloud<pcl::PointXYZRGB>);
-    for(uint16_t i = 0; i < point_cloud.size(); i++)
-    {
-        pcl::PointXYZRGB basic_point;
-        basic_point.x = -1.f * point_cloud[i].point.x;
-        basic_point.y = -1.f * point_cloud[i].point.y;
-        basic_point.z = point_cloud[i].point.z;
-        cv::Vec3b color = point_cloud[i].color;
-        basic_point.b = color[0];
-        basic_point.g = color[1];
-        basic_point.r = color[2];
-        //cout<<"Basic point: "<< basic_point << endl; 
-        point_cloud_ptr->points.push_back(basic_point);
-    }
+    savePointCloud_to_PCD(point_cloud);
 
-    point_cloud_ptr->width = (int)point_cloud_ptr->points.size();
-    point_cloud_ptr->height = 1;
-    //Since the point cloud is sparse, remove all the NaN values automatically set by PCL
-    vector<int> indices;
-    point_cloud_ptr->is_dense = false;
-    pcl::StatisticalOutlierRemoval<pcl::PointXYZRGB> sor;
-    sor.setInputCloud (point_cloud_ptr);
-    sor.setMeanK (50);
-    sor.setStddevMulThresh (1.0);
-    sor.filter (*point_cloud_ptr_filtered);
-    pcl::io::savePCDFileASCII("final.pcd", *point_cloud_ptr_filtered);
 }
