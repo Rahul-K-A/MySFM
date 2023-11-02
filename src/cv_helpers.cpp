@@ -12,7 +12,7 @@ static Ptr<SURF> surf;
 static Ptr<DescriptorMatcher> matcher;
 const float dThreshold = 1.f;
 /*Ratio thresh needs to be kept around 0.5 to produce good BA values*/
-const float ratio_thresh = 0.5f;
+const float ratio_thresh = 0.6f;
 const float acceptable_error = 15.f;
 
 static Mat K = (Mat1d(3,3) <<      2759.48, 0, 1520.69, 
@@ -41,6 +41,7 @@ vector<DataPoint>& getGlobalPC()
 
 void readImages(set<fs::path>& image_paths)
 {
+    initFeatureMatching();
     cout << "Reading images...\n";
     for(auto image_path : image_paths)
     {
@@ -386,6 +387,8 @@ void initFeatureMatching()
 
 void sfm()
 {
+    calculateFeatureCorrespondance();
+    computeFirstPointCloud();
     for(uint16_t current_view = 2; current_view < cameraStates.size(); current_view++ )
     {
         cout << "Calculating image number: " << current_view << endl;
