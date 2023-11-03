@@ -12,7 +12,7 @@ static Ptr<SURF> surf;
 static Ptr<DescriptorMatcher> matcher;
 const float dThreshold = 1.f;
 /*Ratio thresh needs to be kept around 0.5 to produce good BA values*/
-const float ratio_thresh = 0.6f;
+const float ratio_thresh = 0.4f;
 const float acceptable_error = 15.f;
 
 static Mat K = (Mat1d(3,3) <<      2759.48, 0, 1520.69, 
@@ -111,9 +111,9 @@ int cvHelpers::find_best_correspondence(int view_to_eval)
 {
     int max_correspondances = -1;
     int best_match_view = -1;
+    vector<int> point_cloud_status(point_cloud.size(),0);
     for(uint16_t i = 0; i < done_views.size(); i++ )
     {
-        vector<int> point_cloud_status(point_cloud.size(),0);
         int done_view_idx = done_views[i];
         int correspondances = 0;
         vector<DMatch> good_matches = match_table[done_view_idx][view_to_eval];
@@ -130,7 +130,7 @@ int cvHelpers::find_best_correspondence(int view_to_eval)
                     //2d point in image <working_view>
                     point_cloud_status[pc_idx] = 1;
                     //point_cloud[pc_idx].keypoint_index[view_to_eval] = good_matches[match].trainIdx;
-                    correspondances++;
+                                        correspondances++;
                     break;
                 }
             }
@@ -153,7 +153,6 @@ vector<DMatch> cvHelpers::flip_match(const vector<DMatch>& matches_vector)
     {
         DMatch current_match = match;
         std::swap(current_match.queryIdx, current_match.trainIdx);
-        flipped_vector.push_back(current_match);
         flipped_vector.push_back(current_match);
     }
     return flipped_vector;
@@ -193,61 +192,83 @@ void cvHelpers::find_2d_3d_matches(int view1, int view2, vector<Point2f>& imageP
     }
 }
 
+
+
+void find_all_matches(int view1, int view2, vector<KeyPoint>& kp1, vector<KeyPoint>& kp2, vector<int>& kpidx1, vector<int>& kpidx2)
+{
+    kp1.clear();
+    kp2.clear();
+    kpidx1.clear();
+    kpidx2.clear();
+    vector<DMatch> matches = match_table[view1][view2];
+    for(const DMatch& match : matches)
+    {
+        int qIdx = match.queryIdx;
+        int tIdx = match.trainIdx;
+        kp1.push_back(cameraStates[view1].keypoints[qIdx]);
+        kpidx1.push_back(qIdx);
+        kp2.push_back(cameraStates[view2].keypoints[tIdx]);
+        kpidx2.push_back(tIdx);
+    }
+}
+
+
+
 /// @brief Adds a set of points to the global point cloud
 /// @param prevView View 1 which was used to triangulate the points
 /// @param currentView View 2 used for triangulation
 /// @param pc_to_add Point cloud to be added 
 void cvHelpers::addToGlobalPC(int prevView, int currentView, vector<DataPoint>& pc_to_add)
 {
-    int matches = 0;
-    cout << "Appending PC of size " << pc_to_add.size() << endl;
-    for(uint16_t idx = 0; idx < pc_to_add.size(); idx++)
-    {
-        int index_in_current_view = pc_to_add[idx].keypoint_index[currentView];
-        int index_in_previous_view = pc_to_add[idx].keypoint_index[prevView];
-        assert(index_in_current_view != -1 && index_in_previous_view !=-1);
-        bool found = false;
-        for(uint16_t i = 0; i < done_views.size(); i++ )
-        {
-            int view_to_eval = done_views[i];
-            vector<DMatch> view1Match1 = match_table[view_to_eval][currentView];
-            for(uint16_t match = 0; match < view1Match1.size(); match++)
-            {
-                if(index_in_current_view == view1Match1[match].trainIdx)
-                {
-                    if(pc_to_add[idx].keypoint_index[view_to_eval] == -1)
-                    {
-                        pc_to_add[idx].keypoint_index[view_to_eval] = view1Match1[match].queryIdx;
-                        matches++;
-                    }
-                    break;
-                }
-            }
-        }
+    // int matches = 0;
+    // cout << "Appending PC of size " << pc_to_add.size() << endl;
+    // for(uint16_t idx = 0; idx < pc_to_add.size(); idx++)
+    // {
+    //     int index_in_current_view = pc_to_add[idx].keypoint_index[currentView];
+    //     int index_in_previous_view = pc_to_add[idx].keypoint_index[prevView];
+    //     assert(index_in_current_view != -1 && index_in_previous_view !=-1);
+    //     bool found = false;
+    //     for(uint16_t i = 0; i < done_views.size(); i++ )
+    //     {
+    //         int view_to_eval = done_views[i];
+    //         vector<DMatch> view1Match1 = match_table[view_to_eval][currentView];
+    //         for(uint16_t match = 0; match < view1Match1.size(); match++)
+    //         {
+    //             if(index_in_current_view == view1Match1[match].trainIdx)
+    //             {
+    //                 if(pc_to_add[idx].keypoint_index[view_to_eval] == -1)
+    //                 {
+    //                     pc_to_add[idx].keypoint_index[view_to_eval] = view1Match1[match].queryIdx;
+    //                     matches++;
+    //                 }
+    //                 break;
+    //             }
+    //         }
+    //     }
 
-        /* Also fill in old view correspondences*/
-        for(uint16_t i = 0; i < done_views.size(); i++ )
-        {
-            int view_to_eval = done_views[i];
-            vector<DMatch> view1Match1 = match_table[view_to_eval][prevView];
-            for(uint16_t match = 0; match < view1Match1.size(); match++)
-            {
-                if(index_in_previous_view == view1Match1[match].trainIdx)
-                {
-                    if(pc_to_add[idx].keypoint_index[view_to_eval] == -1)
-                    {
-                        pc_to_add[idx].keypoint_index[view_to_eval] = view1Match1[match].queryIdx;
-                        matches++;
-                    }
+    //     /* Also fill in old view correspondences*/
+    //     for(uint16_t i = 0; i < done_views.size(); i++ )
+    //     {
+    //         int view_to_eval = done_views[i];
+    //         vector<DMatch> view1Match1 = match_table[view_to_eval][prevView];
+    //         for(uint16_t match = 0; match < view1Match1.size(); match++)
+    //         {
+    //             if(index_in_previous_view == view1Match1[match].trainIdx)
+    //             {
+    //                 if(pc_to_add[idx].keypoint_index[view_to_eval] == -1)
+    //                 {
+    //                     pc_to_add[idx].keypoint_index[view_to_eval] = view1Match1[match].queryIdx;
+    //                     matches++;
+    //                 }
 
-                    break;
-                }
-            }
+    //                 break;
+    //             }
+    //         }
 
-        }
+    //     }
         
 
-    }
+    // }
     point_cloud.insert(point_cloud.end(),pc_to_add.begin(), pc_to_add.end());
     cout << pc_to_add.size() <<" points added to global point cloud! Current size is " << point_cloud.size() << endl;
     
@@ -415,60 +436,74 @@ void cvHelpers::sfm()
         hconcat(R, t, currpose);
         cout << "Pose of "<< current_view <<" is " << currpose <<endl;
         P = K * currpose;
-        P.convertTo(P, CV_32F);
-        vector<Point2f> prevpts, currpts;
-        KeyPoint::convert(kp1, prevpts);
-        KeyPoint::convert(kp2, currpts);
-        cout<<"Triangulate Points\n";
-        triangulatePoints(cameraStates[best_match_view].P,  P, prevpts ,currpts, homogenised_3d_points );
-        cameraStates[current_view].P = P.clone();
-        assert(homogenised_3d_points.type() == CV_32F);
-        vector<Point3f> points_3f;
-        vector<Point2f> reprojected_points;
-        vector<float> reprojection_error;
-        float average_reprojection_error = 0;
-        float distance; 
-        for(uint16_t col = 0; col < homogenised_3d_points.cols; col++)
+        P.convertTo(cameraStates[current_view].P, CV_32F);
+        int pc_size = 0;
+        for(const int& view : done_views)
         {
-            Mat currPoint3d =  homogenised_3d_points.col(col);
-            currPoint3d /= currPoint3d.at<float>(3, 0);
-            Point3f p(
-                currPoint3d.at<float>(0, 0),
-                currPoint3d.at<float>(1, 0),
-                currPoint3d.at<float>(2, 0)
-            );
-            points_3f.push_back(p);
-        }
-
-        projectPoints(points_3f, R, t, K, noArray(), reprojected_points);
-        assert(currpts.size() == reprojected_points.size());
-        assert(kpidx1.size() == reprojected_points.size());
-        cout<<"Calculating reprojection error...\n";
-        vector<DataPoint> pc_to_add;
-        for(uint16_t pt_idx = 0; pt_idx  < currpts.size(); pt_idx++)
-        {
-            distance = eDistance(currpts[pt_idx], reprojected_points[pt_idx]);
-            average_reprojection_error +=distance;
-            if ( distance < acceptable_error) 
+            // find_2d_3d_matches(view, current_view, imgPoints, ppoint_cloud, kp1, kp2, kpidx1, kpidx2);
+            find_all_matches(view, current_view, kp1, kp2, kpidx1, kpidx2);
+            if(kp1.size() == 0)
             {
-                DataPoint data_point;
-                data_point.keypoint_index = vector<int>(cameraStates.size(), -1);
-                data_point.point = points_3f[pt_idx]; 
-                data_point.keypoint_index[best_match_view] = kpidx1[pt_idx];
-                data_point.keypoint_index[current_view] = kpidx2[pt_idx];
-                data_point.color = cameraStates[best_match_view].Image.at<Vec3b>( cameraStates[best_match_view].keypoints[kpidx1[pt_idx]].pt);
-                pc_to_add.push_back(data_point);
+                continue;
             }
+            vector<Point2f> prevpts, currpts;
+            KeyPoint::convert(kp1, prevpts);
+            KeyPoint::convert(kp2, currpts);
+            cout<<"Triangulate Points\n";
+            triangulatePoints(cameraStates[view].P,  cameraStates[current_view].P, prevpts ,currpts, homogenised_3d_points );
+            assert(homogenised_3d_points.type() == CV_32F);
+            vector<Point3f> points_3f;
+            vector<Point2f> reprojected_points;
+            vector<float> reprojection_error;
+            float average_reprojection_error = 0;
+            float distance; 
+            for(uint16_t col = 0; col < homogenised_3d_points.cols; col++)
+            {
+                Mat currPoint3d =  homogenised_3d_points.col(col);
+                currPoint3d /= currPoint3d.at<float>(3, 0);
+                Point3f p(
+                    currPoint3d.at<float>(0, 0),
+                    currPoint3d.at<float>(1, 0),
+                    currPoint3d.at<float>(2, 0)
+                );
+                points_3f.push_back(p);
+            }
+
+            projectPoints(points_3f, R, t, K, noArray(), reprojected_points);
+            assert(currpts.size() == reprojected_points.size());
+            assert(kpidx1.size() == reprojected_points.size());
+            cout<<"Calculating reprojection error...\n";
+            vector<DataPoint> pc_to_add;
+            for(uint16_t pt_idx = 0; pt_idx  < currpts.size(); pt_idx++)
+            {
+                distance = eDistance(currpts[pt_idx], reprojected_points[pt_idx]);
+                average_reprojection_error +=distance;
+                if ( distance < acceptable_error) 
+                {
+                    DataPoint data_point;
+                    data_point.keypoint_index = vector<int>(cameraStates.size(), -1);
+                    data_point.point = points_3f[pt_idx]; 
+                    data_point.keypoint_index[view] = kpidx1[pt_idx];
+                    data_point.keypoint_index[current_view] = kpidx2[pt_idx];
+                    data_point.color = cameraStates[view].Image.at<Vec3b>( cameraStates[view].keypoints[kpidx1[pt_idx]].pt);
+                    pc_to_add.push_back(data_point);
+                }
+            }
+            
+
+
+            average_reprojection_error = average_reprojection_error/currpts.size();
+            cout<<"Average RE: " << average_reprojection_error << endl;
+            if(average_reprojection_error > acceptable_error)
+            {
+                continue;
+            }
+            addToGlobalPC(view, current_view, pc_to_add);
+            pc_size = (int)(pc_to_add.size());
+            cout<<endl<<endl;
         }
-        
 
-        addToGlobalPC(best_match_view, current_view, pc_to_add);
-
-        average_reprojection_error = average_reprojection_error/currpts.size();
-        cout<<"Average RE: " << average_reprojection_error << endl;
-        cout<<endl<<endl;
-
-        if(pc_to_add.size())
+        if(pc_size)
         {
             done_views.push_back(current_view);
         }
@@ -519,7 +554,7 @@ void cvHelpers::performBA()
     }
 
     params.type = cvsba::Sba::MOTIONSTRUCTURE;
-    params.iterations = 500;
+    params.iterations = 150;
     params.minError = 1e-7;
     params.fixedIntrinsics = 5;
     params.fixedDistortion = 5;

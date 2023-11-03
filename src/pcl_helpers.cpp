@@ -24,12 +24,13 @@ void pclHelpers::savePointCloud_to_PCD(vector<DataPoint>& point_cloud)
 
     point_cloud_ptr->width = (int)point_cloud_ptr->points.size();
     point_cloud_ptr->height = 1;
-
+    cout << "Raw point cloud size: " << point_cloud_ptr->points.size() << endl; 
     // Remove outliers
     StatisticalOutlierRemoval<PointXYZRGB> sor;
     sor.setInputCloud (point_cloud_ptr);
     sor.setMeanK (50);
     sor.setStddevMulThresh (1.0);
     sor.filter (*point_cloud_ptr_filtered);
+    cout << "Filtered point cloud size: " << point_cloud_ptr_filtered->points.size() << endl; 
     io::savePCDFileASCII("final.pcd", *point_cloud_ptr_filtered);
 }
