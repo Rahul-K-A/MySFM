@@ -12,12 +12,12 @@ static Ptr<SURF> surf;
 static Ptr<DescriptorMatcher> matcher;
 const float dThreshold = 1.f;
 /*Ratio thresh needs to be kept around 0.5 to produce good BA values*/
-const float ratio_thresh = 0.4f;
+const float ratio_thresh = 0.6f;
 const float acceptable_error = 15.f;
 
-static Mat K = (Mat1d(3,3) <<      2759.48, 0, 1520.69, 
-                            0, 2764.16, 1006.81, 
-                            0, 0, 1); 
+static Mat K = (Mat1d(3,3) <<   2759.48, 0, 1520.69, 
+                                0, 2764.16, 1006.81, 
+                                0, 0, 1); 
 
 cvsba::Sba BA; 
 cvsba::Sba::Params params ;
@@ -220,60 +220,8 @@ void find_all_matches(int view1, int view2, vector<KeyPoint>& kp1, vector<KeyPoi
 /// @param pc_to_add Point cloud to be added 
 void cvHelpers::addToGlobalPC(int prevView, int currentView, vector<DataPoint>& pc_to_add)
 {
-    // int matches = 0;
-    // cout << "Appending PC of size " << pc_to_add.size() << endl;
-    // for(uint16_t idx = 0; idx < pc_to_add.size(); idx++)
-    // {
-    //     int index_in_current_view = pc_to_add[idx].keypoint_index[currentView];
-    //     int index_in_previous_view = pc_to_add[idx].keypoint_index[prevView];
-    //     assert(index_in_current_view != -1 && index_in_previous_view !=-1);
-    //     bool found = false;
-    //     for(uint16_t i = 0; i < done_views.size(); i++ )
-    //     {
-    //         int view_to_eval = done_views[i];
-    //         vector<DMatch> view1Match1 = match_table[view_to_eval][currentView];
-    //         for(uint16_t match = 0; match < view1Match1.size(); match++)
-    //         {
-    //             if(index_in_current_view == view1Match1[match].trainIdx)
-    //             {
-    //                 if(pc_to_add[idx].keypoint_index[view_to_eval] == -1)
-    //                 {
-    //                     pc_to_add[idx].keypoint_index[view_to_eval] = view1Match1[match].queryIdx;
-    //                     matches++;
-    //                 }
-    //                 break;
-    //             }
-    //         }
-    //     }
-
-    //     /* Also fill in old view correspondences*/
-    //     for(uint16_t i = 0; i < done_views.size(); i++ )
-    //     {
-    //         int view_to_eval = done_views[i];
-    //         vector<DMatch> view1Match1 = match_table[view_to_eval][prevView];
-    //         for(uint16_t match = 0; match < view1Match1.size(); match++)
-    //         {
-    //             if(index_in_previous_view == view1Match1[match].trainIdx)
-    //             {
-    //                 if(pc_to_add[idx].keypoint_index[view_to_eval] == -1)
-    //                 {
-    //                     pc_to_add[idx].keypoint_index[view_to_eval] = view1Match1[match].queryIdx;
-    //                     matches++;
-    //                 }
-
-    //                 break;
-    //             }
-    //         }
-
-    //     }
-        
-
-    // }
     point_cloud.insert(point_cloud.end(),pc_to_add.begin(), pc_to_add.end());
     cout << pc_to_add.size() <<" points added to global point cloud! Current size is " << point_cloud.size() << endl;
-    
-    
-
 }
 
 
@@ -571,7 +519,6 @@ void cvHelpers::performBA()
     {
         point_cloud[idx].point = points[idx];
     }
-
 
     for(uint16_t i = 0; i < done_views.size(); i++)
     {
