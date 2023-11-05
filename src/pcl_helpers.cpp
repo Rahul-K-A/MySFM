@@ -8,9 +8,9 @@ void pclHelpers::savePointCloud_to_PCD(vector<DataPoint>& point_cloud)
     //Convert Point3D into PointXYZRGB
     PointCloud<PointXYZRGB>::Ptr point_cloud_ptr(new PointCloud<PointXYZRGB>);
     PointCloud<PointXYZRGB>::Ptr point_cloud_ptr_filtered(new PointCloud<PointXYZRGB>);
-    for(uint16_t i = 0; i < point_cloud.size(); i++)
+    PointXYZRGB basic_point;
+    for(uint32_t i = 0; i < point_cloud.size(); i++)
     {
-        PointXYZRGB basic_point;
         basic_point.x = -1.f * point_cloud[i].point.x;
         basic_point.y = -1.f * point_cloud[i].point.y;
         basic_point.z = point_cloud[i].point.z;
