@@ -13,9 +13,20 @@ file(GLOB_RECURSE SOURCE_FILES
 
 add_executable( ${PROJECT_NAME} ${SOURCE_FILES} )
 
+FIND_PACKAGE(OpenMP)
+if(OPENMP_FOUND) 
+	SET(REQUIRED_LIBRARIES  ${REQUIRED_LIBRARIES} -lgomp)
+	add_definitions(-DUSE_OMP)
+    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
+	set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
+        set(LINKER_LIBS ${LINKER_LIBS} gomp) 
+else()
+endif()
+
 # GCC Versions less than 8 dont have support for c++17
 if(CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 8.0)
 	message("GCC version is greater than 8. Using new filesystem includes!")
+	set_property(TARGET ${PROJECT_NAME} PROPERTY CXX_STANDARD 17)
 	add_compile_definitions(USE_NEW_FILESYSTEM_HEADER)
 else()
 	message("GCC version is less than 8. Using old filesystem includes!")
